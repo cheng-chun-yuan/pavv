@@ -1,0 +1,18 @@
+{
+  "name": "blsgun",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "bun run --filter '*' test",
+    "test:sdk": "cd packages/sdk && bun test",
+    "build:circuits": "cd packages/circuits && nargo compile",
+    "build:contracts": "cd packages/contracts && bun run build"
+  },
+  "dependencies": {
+    "@aztec/foundation": "^2.1.11",
+    "@noir-lang/noir_js": "1.0.0-beta.18",
+    "@noir-lang/noirc_abi": "^1.0.0-beta.18"
+  }
+}
