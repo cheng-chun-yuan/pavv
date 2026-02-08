@@ -293,6 +293,18 @@ export function buildTransaction(
 // ─── Circuit Witness Generation ───────────────────────────────────────────────
 
 /**
+ * Split a bigint into lo (lower 128 bits) and hi (upper 128 bits).
+ * Used for EmbeddedCurveScalar which requires 128-bit limbs.
+ */
+function splitLoHi(value: bigint): { lo: bigint; hi: bigint } {
+  const mask128 = (1n << 128n) - 1n;
+  return {
+    lo: value & mask128,
+    hi: value >> 128n,
+  };
+}
+
+/**
  * Generate circuit inputs (Prover.toml format) for the Noir ZK proof.
  */
 export function buildCircuitInputs(
@@ -313,10 +325,14 @@ export function buildCircuitInputs(
     pathIndices.push(0);
   }
 
+  // Split signature_z into 128-bit limbs for EmbeddedCurveScalar
+  const { lo: z_lo, hi: z_hi } = splitLoHi(signature.z);
+
   return {
     signature_R_x: `0x${signature.R.x.toString(16)}`,
     signature_R_y: `0x${signature.R.y.toString(16)}`,
-    signature_z: `0x${signature.z.toString(16)}`,
+    signature_z_lo: `0x${z_lo.toString(16)}`,
+    signature_z_hi: `0x${z_hi.toString(16)}`,
     group_pubkey_x: `0x${groupPubKey.x.toString(16)}`,
     group_pubkey_y: `0x${groupPubKey.y.toString(16)}`,
     spending_key_hash: `0x${spendingKeyHash.toString(16)}`,

@@ -73,10 +73,10 @@ export function generateProof(inputs: CircuitInputs): Uint8Array {
   console.log("[BLSGun] Generating witness...");
   execSync("nargo execute", { cwd: CIRCUITS_DIR, stdio: "inherit" });
 
-  // 3. Generate proof with bb
+  // 3. Generate proof with bb (EVM target for on-chain verification)
   console.log("[BLSGun] Generating proof...");
   execSync(
-    `bb prove -b ${join(TARGET_DIR, "blsgun.json")} -w ${join(TARGET_DIR, "blsgun.gz")} -o ${TARGET_DIR}`,
+    `bb prove -b ${join(TARGET_DIR, "blsgun.json")} -w ${join(TARGET_DIR, "blsgun.gz")} -o ${TARGET_DIR} -t evm`,
     { cwd: CIRCUITS_DIR, stdio: "inherit" }
   );
 
@@ -97,7 +97,7 @@ export function generateProof(inputs: CircuitInputs): Uint8Array {
 export function generateVerificationKey(): void {
   console.log("[BLSGun] Generating verification key...");
   execSync(
-    `bb write_vk -b ${join(TARGET_DIR, "blsgun.json")} --oracle_hash keccak`,
+    `bb write_vk -b ${join(TARGET_DIR, "blsgun.json")} -t evm`,
     { cwd: CIRCUITS_DIR, stdio: "inherit" }
   );
   console.log("[BLSGun] Verification key generated.");
@@ -109,10 +109,29 @@ export function generateVerificationKey(): void {
 export function generateSolidityVerifier(outputPath: string): void {
   console.log("[BLSGun] Generating Solidity verifier...");
   execSync(
-    `bb contract -b ${join(TARGET_DIR, "blsgun.json")} -o ${outputPath}`,
+    `bb write_solidity_verifier -k ${join(TARGET_DIR, "vk")} -o ${outputPath} -t evm`,
     { cwd: CIRCUITS_DIR, stdio: "inherit" }
   );
   console.log(`[BLSGun] Solidity verifier written to ${outputPath}`);
+}
+
+/**
+ * Read public inputs from the bb output file.
+ * @param numInputs Number of public inputs in the circuit
+ * @returns Array of public input hex strings (bytes32)
+ */
+export function readPublicInputs(numInputs: number = 3): string[] {
+  const piPath = join(TARGET_DIR, "public_inputs");
+  if (!existsSync(piPath)) {
+    throw new Error("Public inputs file not found");
+  }
+  const data = readFileSync(piPath);
+  const inputs: string[] = [];
+  for (let i = 0; i < numInputs; i++) {
+    const slice = data.slice(i * 32, (i + 1) * 32);
+    inputs.push("0x" + Buffer.from(slice).toString("hex"));
+  }
+  return inputs;
 }
 
 // ─── Proof Verification (Off-chain) ──────────────────────────────────────────
@@ -123,7 +142,7 @@ export function generateSolidityVerifier(outputPath: string): void {
 export function verifyProof(): boolean {
   try {
     execSync(
-      `bb verify -b ${join(TARGET_DIR, "blsgun.json")} -p ${join(TARGET_DIR, "proof")}`,
+      `bb prove --verify -b ${join(TARGET_DIR, "blsgun.json")} -w ${join(TARGET_DIR, "blsgun.gz")} -t evm`,
       { cwd: CIRCUITS_DIR, stdio: "inherit" }
     );
     return true;
