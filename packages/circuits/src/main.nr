@@ -31,6 +31,23 @@ fn hash_4(a: Field, b: Field, c: Field, d: Field) -> Field {
     std::hash::poseidon2_permutation([a, b, c, d], 4)[0]
 }
 
+// Helper: decompose a Field into two 128-bit limbs (lo, hi) such that
+// value = lo + hi * 2^128. Both lo and hi are < 2^128.
+fn to_lo_hi(value: Field) -> (Field, Field) {
+    let bytes: [u8; 32] = value.to_be_bytes();
+    // bytes[0..16] = high 128 bits, bytes[16..32] = low 128 bits (big-endian)
+    let mut lo: Field = 0;
+    let mut hi: Field = 0;
+    for i in 0..16 {
+        hi = hi * 256 + bytes[i] as Field;
+    }
+    for i in 16..32 {
+        lo = lo * 256 + bytes[i] as Field;
+    }
+    assert(lo + hi * 0x100000000000000000000000000000000 == value, "lo/hi decomposition mismatch");
+    (lo, hi)
+}
+
 // -- Main Circuit --
 
 fn main(
@@ -39,7 +56,9 @@ fn main(
     // FROST Schnorr signature components
     signature_R_x: Field,
     signature_R_y: Field,
-    signature_z: Field,
+    // signature_z split into 128-bit limbs for EmbeddedCurveScalar
+    signature_z_lo: Field,
+    signature_z_hi: Field,
     group_pubkey_x: Field,
     group_pubkey_y: Field,
 
@@ -100,17 +119,18 @@ fn main(
     let c = hash_2(c_inner, message);
 
     // Schnorr verification: [z]G == R + [c]PK
-    // z scalar for fixed_base_scalar_mul (Grumpkin native)
-    let z_scalar = EmbeddedCurveScalar { lo: signature_z, hi: 0 };
+    // z scalar split into 128-bit limbs (passed as inputs)
+    let z_scalar = EmbeddedCurveScalar { lo: signature_z_lo, hi: signature_z_hi };
     let lhs = fixed_base_scalar_mul(z_scalar);
 
-    // [c]PK using multi_scalar_mul
+    // [c]PK using multi_scalar_mul -- decompose c into 128-bit limbs
     let pk_point = EmbeddedCurvePoint {
         x: group_pubkey_x,
         y: group_pubkey_y,
         is_infinite: false,
     };
-    let c_scalar = EmbeddedCurveScalar { lo: c, hi: 0 };
+    let (c_lo, c_hi) = to_lo_hi(c);
+    let c_scalar = EmbeddedCurveScalar { lo: c_lo, hi: c_hi };
     let c_pk = multi_scalar_mul([pk_point], [c_scalar]);
 
     // R + [c]PK
