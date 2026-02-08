@@ -189,6 +189,6 @@ describe("FROST Partial Signing Flow", () => {
       frostAggregate([
         { signerIndex: 1n, z_i: randomScalar(), R: pkg.groupPublicKey },
       ]);
-    }).toThrow("Need at least 2 partial signatures");
+    }).toThrow("Need at least 2 partial signatures, got 1");
   });
 });
