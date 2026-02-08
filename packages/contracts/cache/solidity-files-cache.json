@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/chengchunyuan/project/hackathon/blsgun/packages/contracts/contracts/BLSGun.sol": {
-      "lastModificationDate": 1770481109184,
-      "contentHash": "f031b8e6fac95f76bfb44d561fe5105d",
+      "lastModificationDate": 1770481224919,
+      "contentHash": "0141b2607bcd2bbaff59017b34ee5f80",
       "sourceName": "contracts/BLSGun.sol",
       "solcConfig": {
         "version": "0.8.27",

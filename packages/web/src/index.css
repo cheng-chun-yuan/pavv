@@ -2,6 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  font-size: 15px;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+
+/* Force dark backgrounds on form elements that browsers may override */
+input, select, textarea {
+  color-scheme: dark;
+}
+
+@layer components {
+  .glass-card {
+    background: rgba(36, 42, 46, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(74, 77, 81, 0.5);
+  }
 }

@@ -13,6 +13,13 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
+    hardhat: {
+      allowUnlimitedContractSize: true,
+    },
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      chainId: 31337,
+    },
     confluxTestnet: {
       url: "https://evmtestnet.confluxrpc.com",
       chainId: 71,

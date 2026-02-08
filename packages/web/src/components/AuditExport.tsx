@@ -35,7 +35,7 @@ export function AuditExport({ state }: AuditExportProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `blsgun-audit-${fromBlock}-${toBlock}.json`;
+    a.download = `pavv-audit-${fromBlock}-${toBlock}.json`;
     a.click();
     URL.revokeObjectURL(url);
     setExported(true);
@@ -43,62 +43,90 @@ export function AuditExport({ state }: AuditExportProps) {
   };
 
   return (
-    <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6">
-      <h2 className="text-xl font-bold mb-2">Compliance Audit Export</h2>
-      <p className="text-sm text-gray-400 mb-6">
-        Decrypt and export transaction history using the viewing key.
-        This provides full transparency to auditors without compromising on-chain privacy.
-      </p>
+    <div className="max-w-xl">
+      <div className="bg-dark-card rounded-xl border border-dark-border shadow-card p-6">
+        <h2 className="text-xl font-semibold text-white mb-1">Compliance Audit Export</h2>
+        <p className="text-base text-slate-400 mb-6">
+          Decrypt and export transaction history using the viewing key.
+          Full transparency to auditors without compromising on-chain privacy.
+        </p>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">From Block</label>
-          <input
-            type="number"
-            value={fromBlock}
-            onChange={(e) => setFromBlock(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gun-500"
-          />
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <label className="block text-base font-medium text-slate-200 mb-1">From Block</label>
+            <input
+              type="number"
+              value={fromBlock}
+              onChange={(e) => setFromBlock(e.target.value)}
+              className="w-full bg-dark-surface border border-dark-border rounded-lg px-4 py-3 text-base text-white focus:outline-none focus:ring-2 focus:ring-pavv-500 focus:border-transparent transition-colors duration-200"
+            />
+          </div>
+          <div>
+            <label className="block text-base font-medium text-slate-200 mb-1">To Block</label>
+            <input
+              type="number"
+              value={toBlock}
+              onChange={(e) => setToBlock(e.target.value)}
+              className="w-full bg-dark-surface border border-dark-border rounded-lg px-4 py-3 text-base text-white focus:outline-none focus:ring-2 focus:ring-pavv-500 focus:border-transparent transition-colors duration-200"
+            />
+          </div>
         </div>
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">To Block</label>
-          <input
-            type="number"
-            value={toBlock}
-            onChange={(e) => setToBlock(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gun-500"
-          />
+
+        <button
+          onClick={handleExport}
+          className={`w-full py-3 rounded-xl font-semibold text-base transition-colors duration-200 cursor-pointer ${
+            exported
+              ? "bg-pavv-600 text-white"
+              : "bg-pavv-500 hover:bg-pavv-600 text-white"
+          }`}
+        >
+          {exported ? "Exported!" : "Export Audit Report (JSON)"}
+        </button>
+
+        <div className="mt-6 grid grid-cols-2 gap-4">
+          <div className="p-4 bg-dark-surface rounded-lg">
+            <h3 className="text-base font-semibold text-white mb-2">Auditor sees</h3>
+            <ul className="text-sm text-slate-400 space-y-2">
+              <li className="flex items-start gap-1.5">
+                <svg className="w-4 h-4 text-pavv-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                Transaction amounts & timestamps
+              </li>
+              <li className="flex items-start gap-1.5">
+                <svg className="w-4 h-4 text-pavv-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                Sender & recipient identities
+              </li>
+              <li className="flex items-start gap-1.5">
+                <svg className="w-4 h-4 text-pavv-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                Approval chain
+              </li>
+              <li className="flex items-start gap-1.5">
+                <svg className="w-4 h-4 text-pavv-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                Proof of data integrity
+              </li>
+            </ul>
+          </div>
+          <div className="p-4 bg-dark-surface rounded-lg">
+            <h3 className="text-base font-semibold text-white mb-2">Private on-chain</h3>
+            <ul className="text-sm text-slate-400 space-y-2">
+              <li className="flex items-start gap-1.5">
+                <svg className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+                Amounts in commitments
+              </li>
+              <li className="flex items-start gap-1.5">
+                <svg className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+                Stealth addresses
+              </li>
+              <li className="flex items-start gap-1.5">
+                <svg className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+                FROST sigs in ZK proofs
+              </li>
+              <li className="flex items-start gap-1.5">
+                <svg className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+                No public keys exposed
+              </li>
+            </ul>
+          </div>
         </div>
-      </div>
-
-      <button
-        onClick={handleExport}
-        className={`w-full py-3 rounded-xl font-semibold transition-colors ${
-          exported
-            ? "bg-green-600 text-white"
-            : "bg-gun-600 hover:bg-gun-500 text-white"
-        }`}
-      >
-        {exported ? "Exported!" : "Export Audit Report (JSON)"}
-      </button>
-
-      <div className="mt-6 p-4 bg-gray-800/50 rounded-lg">
-        <h3 className="text-sm font-semibold mb-2">What the auditor sees:</h3>
-        <ul className="text-xs text-gray-400 space-y-1">
-          <li>- Full transaction amounts and timestamps</li>
-          <li>- Sender and recipient identities (decrypted)</li>
-          <li>- Approval chain (which signers authorized)</li>
-          <li>- Cryptographic proof of data integrity</li>
-        </ul>
-        <h3 className="text-sm font-semibold mt-3 mb-2">
-          What remains private on-chain:
-        </h3>
-        <ul className="text-xs text-gray-400 space-y-1">
-          <li>- Transaction amounts hidden in commitments</li>
-          <li>- Sender/recipient hidden by stealth addresses</li>
-          <li>- FROST signatures hidden inside ZK proofs</li>
-          <li>- No public keys exposed on-chain</li>
-        </ul>
       </div>
     </div>
   );

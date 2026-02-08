@@ -104,6 +104,21 @@ export {
   exportAuditJSON,
 } from "./audit.js";
 
+// Distributed key ceremony
+export {
+  distributedCeremony,
+  verifyShareAgainstCommitments,
+  clearSecret,
+} from "./ceremony.js";
+export type {
+  CeremonyConfig,
+  CeremonyShare,
+  CeremonyResult,
+} from "./ceremony.js";
+
+// Nonce tracker
+export { NonceTracker } from "./nonce-tracker.js";
+
 // Prover (optional — requires nargo/bb CLI)
 export {
   compileCircuit,
