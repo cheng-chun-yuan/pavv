@@ -292,6 +292,7 @@ export default function App() {
               currentSigner={state.currentSigner}
               onCreatePayment={handleCreatePayment}
               groupConfig={state.groupConfig}
+              balance={state.balance}
             />
           )}
 

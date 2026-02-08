@@ -179,6 +179,21 @@ export function Sidebar({
       {/* Signer List (compact) */}
       {initialized && (
         <div className="px-4 py-3 border-t border-sidebar-border">
+          {/* Current identity badge */}
+          {currentSigner && (
+            <div className="mb-3 px-2.5 py-2 bg-pavv-500/10 border border-pavv-500/20 rounded-lg">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-pavv-400 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                </svg>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-pavv-400/70 uppercase tracking-wider leading-tight">Signed in as</p>
+                  <p className="text-sm font-semibold text-pavv-400 truncate">{currentSigner}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <p className="text-xs font-medium text-sidebar-text/60 uppercase tracking-wider mb-2">
             Signers
           </p>
@@ -188,27 +203,38 @@ export function Sidebar({
               const hasKey = signer?.hasKey ?? false;
               const isActive = currentSigner === role;
               return (
-                <div
+                <button
                   key={role}
+                  type="button"
                   className={`w-full text-left px-2.5 py-2 rounded text-sm flex items-center gap-2 cursor-pointer transition-colors duration-200 ${
                     isActive
                       ? "text-pavv-400 bg-pavv-500/15 font-medium"
                       : hasKey
                         ? "text-sidebar-text hover:text-white"
-                        : "text-sidebar-text/50 hover:text-sidebar-text/70"
+                        : "text-sidebar-text/50 hover:text-sidebar-text/70 hover:bg-sidebar-hover"
                   }`}
                   onClick={() => hasKey ? onSignerChange(role) : onSignerLogin?.(role)}
+                  title={!hasKey ? "Sign in with passkey to unlock" : isActive ? "Currently active" : "Switch to this signer"}
                 >
-                  <div className={`w-1.5 h-1.5 rounded-full ${
-                    isActive ? "bg-pavv-400" : hasKey ? "bg-pavv-500/50" : "bg-sidebar-text/20"
-                  }`} />
+                  {isActive ? (
+                    <svg className="w-3.5 h-3.5 text-pavv-400 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                    </svg>
+                  ) : (
+                    <div className={`w-1.5 h-1.5 rounded-full ${
+                      hasKey ? "bg-pavv-500/50" : "bg-sidebar-text/20"
+                    }`} />
+                  )}
                   <span className="flex-1">{role}</span>
                   {!hasKey && (
-                    <svg className="w-3.5 h-3.5 text-sidebar-text/30" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                    </svg>
+                    <span className="flex items-center gap-1 text-[10px] text-sidebar-text/40">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                      </svg>
+                      passkey
+                    </span>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
