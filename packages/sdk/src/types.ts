@@ -17,8 +17,9 @@ export const POINT_AT_INFINITY: GrumpkinPoint = { x: 0n, y: 0n };
 
 /** FROST key share for a single signer */
 export interface KeyShare {
-  index: bigint; // Signer index (1, 2, or 3)
-  secretShare: bigint; // Shamir share k_i = S(index)
+  index: bigint; // Signer index (1..n)
+  rank: number; // Derivative order (0 = standard eval, 1 = first derivative, etc.)
+  secretShare: bigint; // Shamir share k_i = f^(rank)(index)
   publicShare: GrumpkinPoint; // PK_i = [k_i]G
 }
 
@@ -34,15 +35,21 @@ export interface NoncePair {
 export interface SignerKeyMaterial {
   share: KeyShare;
   nonces: NoncePair[];
-  viewingKey?: bigint; // Only distributed to authorized viewers
+  viewingKey: bigint; // All signers get full viewing key for balance scanning
 }
 
 /** Master key package (output of keygen ceremony) */
 export interface MasterKeyPackage {
+  threshold: number; // t (minimum signers to spend)
   groupPublicKey: GrumpkinPoint; // PK_group = [k]G
-  shares: KeyShare[]; // 3 shares for 2-of-3
+  shares: KeyShare[]; // n shares for t-of-n
   viewingSecretKey: bigint;
   viewingPublicKey: GrumpkinPoint;
+}
+
+/** Hierarchical key package with rank assignments */
+export interface HierarchicalKeyPackage extends MasterKeyPackage {
+  signerRanks: { index: bigint; rank: number }[];
 }
 
 // ─── Transaction Types ────────────────────────────────────────────────────────
@@ -121,6 +128,7 @@ export interface StealthAddress {
 export interface SigningSession {
   message: bigint;
   participants: bigint[]; // Signer indices participating (e.g., [1n, 2n])
+  participantRanks?: Map<bigint, number>; // Optional rank info for hierarchical FROST
   nonceCommitments: Map<bigint, { D: GrumpkinPoint; E: GrumpkinPoint }>;
   partials: PartialSignature[];
   groupPublicKey: GrumpkinPoint;
@@ -154,7 +162,8 @@ export interface CircuitInputs {
   // Private inputs
   signature_R_x: string;
   signature_R_y: string;
-  signature_z: string;
+  signature_z_lo: string;
+  signature_z_hi: string;
   group_pubkey_x: string;
   group_pubkey_y: string;
   spending_key_hash: string;

@@ -1,9 +1,9 @@
 /**
- * BLSGun FROST 2-of-3 Threshold Signing on Grumpkin
+ * BLSGun FROST t-of-n Threshold Signing on Grumpkin
  *
  * Implements FROST (Flexible Round-Optimized Schnorr Threshold) signing
  * per RFC 9591, adapted for the Grumpkin curve. With pre-computed nonces,
- * signing is effectively 1-round.
+ * signing is effectively 1-round. Threshold is configurable.
  *
  * The resulting Schnorr signature (R, z) satisfies: [z]G = R + [c]PK_group
  * This is verified inside the Noir ZK circuit — nothing leaks on-chain.
@@ -17,6 +17,7 @@ import type {
   PartialSignature,
   SigningSession,
 } from "./types.js";
+import { birkhoffCoeff, type BirkhoffParticipant } from "./birkhoff.js";
 import {
   Fr,
   G,
@@ -95,15 +96,19 @@ export function lagrangeCoeff(i: bigint, participants: bigint[]): bigint {
  * @param message - The transaction message hash M
  * @param participants - Signer indices participating (e.g., [1n, 2n])
  * @param groupPublicKey - The group public key PK_group
+ * @param threshold - Minimum number of signers required (default: 2)
  * @returns A new signing session
  */
 export function createSigningSession(
   message: bigint,
   participants: bigint[],
-  groupPublicKey: GrumpkinPoint
+  groupPublicKey: GrumpkinPoint,
+  threshold: number = 2
 ): SigningSession {
-  if (participants.length < 2) {
-    throw new Error("FROST requires at least 2 participants for 2-of-3");
+  if (participants.length < threshold) {
+    throw new Error(
+      `FROST requires at least ${threshold} participants, got ${participants.length}`
+    );
   }
   return {
     message,
@@ -191,11 +196,17 @@ export function frostPartialSign(
  * Aggregate partial signatures into a final FROST Schnorr signature.
  *
  * @param partials - Partial signatures from t signers
+ * @param threshold - Minimum number of partial signatures required (default: 2)
  * @returns Final signature (R, z) in standard Schnorr format
  */
-export function frostAggregate(partials: PartialSignature[]): FrostSignature {
-  if (partials.length < 2) {
-    throw new Error("Need at least 2 partial signatures for 2-of-3 FROST");
+export function frostAggregate(
+  partials: PartialSignature[],
+  threshold: number = 2
+): FrostSignature {
+  if (partials.length < threshold) {
+    throw new Error(
+      `Need at least ${threshold} partial signatures, got ${partials.length}`
+    );
   }
 
   // All partials should have the same R
@@ -248,46 +259,192 @@ export function frostVerify(
 // ─── Convenience: Full Sign Flow ──────────────────────────────────────────────
 
 /**
- * Complete FROST signing flow for 2-of-3.
+ * Complete FROST signing flow for t-of-n.
  *
- * Takes two signers' key material and produces a valid Schnorr signature.
+ * Takes t signers' key material and produces a valid Schnorr signature.
  * Handles session creation, nonce registration, partial signing, and aggregation.
  *
  * @param message - Transaction message hash
- * @param signer1 - First signer { index, secretShare, nonce }
- * @param signer2 - Second signer { index, secretShare, nonce }
+ * @param signers - Array of signers { index, secretShare, nonce } (length >= threshold)
  * @param groupPublicKey - The group public key
+ * @param threshold - Minimum signers required (default: signers.length)
  * @returns Complete FROST signature
+ */
+export function frostSign(
+  message: bigint,
+  signers: { index: bigint; secretShare: bigint; nonce: NoncePair }[],
+  groupPublicKey: GrumpkinPoint,
+  threshold?: number
+): FrostSignature;
+/**
+ * @deprecated Use the array form: frostSign(message, [signer1, signer2], groupPK)
  */
 export function frostSign(
   message: bigint,
   signer1: { index: bigint; secretShare: bigint; nonce: NoncePair },
   signer2: { index: bigint; secretShare: bigint; nonce: NoncePair },
   groupPublicKey: GrumpkinPoint
+): FrostSignature;
+export function frostSign(
+  message: bigint,
+  signersOrSigner1: { index: bigint; secretShare: bigint; nonce: NoncePair }[] | { index: bigint; secretShare: bigint; nonce: NoncePair },
+  groupPKOrSigner2: GrumpkinPoint | { index: bigint; secretShare: bigint; nonce: NoncePair },
+  thresholdOrGroupPK?: number | GrumpkinPoint
 ): FrostSignature {
-  const participants = [signer1.index, signer2.index];
+  // Detect legacy 2-arg form: frostSign(msg, signer1, signer2, groupPK)
+  let signers: { index: bigint; secretShare: bigint; nonce: NoncePair }[];
+  let groupPublicKey: GrumpkinPoint;
+  let threshold: number;
+
+  if (Array.isArray(signersOrSigner1)) {
+    // New form: frostSign(message, signers[], groupPK, threshold?)
+    signers = signersOrSigner1;
+    groupPublicKey = groupPKOrSigner2 as GrumpkinPoint;
+    threshold = (thresholdOrGroupPK as number | undefined) ?? signers.length;
+  } else {
+    // Legacy form: frostSign(message, signer1, signer2, groupPK)
+    signers = [signersOrSigner1, groupPKOrSigner2 as { index: bigint; secretShare: bigint; nonce: NoncePair }];
+    groupPublicKey = thresholdOrGroupPK as GrumpkinPoint;
+    threshold = 2;
+  }
+
+  const participants = signers.map((s) => s.index);
 
   // Create session
-  const session = createSigningSession(message, participants, groupPublicKey);
+  const session = createSigningSession(message, participants, groupPublicKey, threshold);
 
   // Register nonce commitments
-  registerNonceCommitment(session, signer1.index, signer1.nonce.D, signer1.nonce.E);
-  registerNonceCommitment(session, signer2.index, signer2.nonce.D, signer2.nonce.E);
+  for (const signer of signers) {
+    registerNonceCommitment(session, signer.index, signer.nonce.D, signer.nonce.E);
+  }
 
   // Produce partial signatures
-  const partial1 = frostPartialSign(
-    signer1.index,
-    signer1.secretShare,
-    signer1.nonce,
-    session
-  );
-  const partial2 = frostPartialSign(
-    signer2.index,
-    signer2.secretShare,
-    signer2.nonce,
-    session
+  const partials = signers.map((signer) =>
+    frostPartialSign(signer.index, signer.secretShare, signer.nonce, session)
   );
 
   // Aggregate
-  return frostAggregate([partial1, partial2]);
+  return frostAggregate(partials, threshold);
+}
+
+// ─── Hierarchical FROST Signing (Birkhoff) ──────────────────────────────────
+
+/**
+ * Produce a FROST partial signature using Birkhoff coefficients.
+ *
+ * Replaces Lagrange coefficient with Birkhoff coefficient for hierarchical signing.
+ * The formula changes from:
+ *   z_i = d_i + rho_i*e_i + lambda_i*k_i*c
+ * to:
+ *   z_i = d_i + rho_i*e_i + beta_i*k_i*c
+ *
+ * @param signerIndex - This signer's index
+ * @param signerRank - This signer's rank (derivative order)
+ * @param secretShare - This signer's share (f^(rank)(index))
+ * @param nonce - Pre-computed nonce pair
+ * @param session - The signing session (must have participantRanks set)
+ * @param participants - All participants with their ranks
+ * @returns Partial signature { z_i, R }
+ */
+export function frostHierarchicalPartialSign(
+  signerIndex: bigint,
+  signerRank: number,
+  secretShare: bigint,
+  nonce: NoncePair,
+  session: SigningSession,
+  participants: BirkhoffParticipant[]
+): PartialSignature {
+  const { message, nonceCommitments, groupPublicKey } = session;
+  const participantIndices = participants.map((p) => p.index);
+
+  // Verify all participants have registered nonce commitments
+  for (const p of participantIndices) {
+    if (!nonceCommitments.has(p)) {
+      throw new Error(`Missing nonce commitment for signer ${p}`);
+    }
+  }
+
+  // 1. Compute binding factor
+  const rho_i = hashBinding(message, nonce.D, nonce.E, signerIndex);
+
+  // 2. Compute group nonce R
+  let R: ProjectivePointType = ZERO;
+  for (const j of participantIndices) {
+    const { D, E } = nonceCommitments.get(j)!;
+    const rho_j = hashBinding(message, D, E, j);
+    const Ej_scaled = scalarMul(fromAffine(E), rho_j);
+    const term = pointAdd(fromAffine(D), Ej_scaled);
+    R = pointAdd(R, term);
+  }
+
+  // 3. Compute challenge
+  const R_affine = toAffine(R);
+  const c = hashChallenge(R_affine, groupPublicKey, message);
+
+  // 4. Compute Birkhoff coefficient (replaces Lagrange)
+  const beta_i = birkhoffCoeff(signerIndex, signerRank, participants);
+
+  // 5. Partial signature: z_i = d_i + rho_i*e_i + beta_i*k_i*c
+  const z_i = Fr.add(
+    Fr.add(nonce.d, Fr.mul(rho_i, nonce.e)),
+    Fr.mul(Fr.mul(beta_i, secretShare), c)
+  );
+
+  return { signerIndex, z_i, R: R_affine };
+}
+
+/**
+ * Complete hierarchical FROST signing flow.
+ *
+ * Uses Birkhoff interpolation instead of Lagrange for signers with ranks.
+ * Produces the same signature format (R, z) that passes standard verification.
+ *
+ * @param message - Transaction message hash
+ * @param signers - Array of signers with index, rank, secretShare, and nonce
+ * @param groupPublicKey - The group public key
+ * @param threshold - Minimum signers required
+ * @returns Complete FROST signature
+ * @throws If the signer set is not Birkhoff-poised
+ */
+export function frostHierarchicalSign(
+  message: bigint,
+  signers: { index: bigint; rank: number; secretShare: bigint; nonce: NoncePair }[],
+  groupPublicKey: GrumpkinPoint,
+  threshold: number
+): FrostSignature {
+  if (signers.length < threshold) {
+    throw new Error(
+      `Need at least ${threshold} signers, got ${signers.length}`
+    );
+  }
+
+  const participants: BirkhoffParticipant[] = signers.map((s) => ({
+    index: s.index,
+    rank: s.rank,
+  }));
+  const participantIndices = signers.map((s) => s.index);
+
+  // Create session with rank metadata
+  const session = createSigningSession(message, participantIndices, groupPublicKey, threshold);
+  session.participantRanks = new Map(signers.map((s) => [s.index, s.rank]));
+
+  // Register nonce commitments
+  for (const signer of signers) {
+    registerNonceCommitment(session, signer.index, signer.nonce.D, signer.nonce.E);
+  }
+
+  // Produce partial signatures using Birkhoff coefficients
+  const partials = signers.map((signer) =>
+    frostHierarchicalPartialSign(
+      signer.index,
+      signer.rank,
+      signer.secretShare,
+      signer.nonce,
+      session,
+      participants
+    )
+  );
+
+  // Aggregate
+  return frostAggregate(partials, threshold);
 }

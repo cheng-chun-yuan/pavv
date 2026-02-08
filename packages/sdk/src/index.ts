@@ -12,6 +12,7 @@ export type {
   NoncePair,
   SignerKeyMaterial,
   MasterKeyPackage,
+  HierarchicalKeyPackage,
   Note,
   CommitmentLeaf,
   MerkleProof,
@@ -63,6 +64,9 @@ export {
   precomputeNonces,
   generateMasterKeyPackage,
   createSignerKeyMaterial,
+  evaluateDerivative,
+  hierarchicalSplit,
+  generateHierarchicalKeyPackage,
 } from "./keygen.js";
 
 // FROST signing
@@ -75,7 +79,20 @@ export {
   frostAggregate,
   frostVerify,
   frostSign,
+  frostHierarchicalPartialSign,
+  frostHierarchicalSign,
 } from "./signer.js";
+
+// Birkhoff interpolation (hierarchical threshold)
+export {
+  fallingFactorial,
+  buildBirkhoffMatrix,
+  gaussianEliminate,
+  birkhoffCoeff,
+  birkhoffReconstruct,
+  isBirkhoffPoised,
+} from "./birkhoff.js";
+export type { BirkhoffParticipant } from "./birkhoff.js";
 
 // Transaction construction
 export {
@@ -123,6 +140,7 @@ export { NonceTracker } from "./nonce-tracker.js";
 export {
   compileCircuit,
   generateProof,
+  readPublicInputs,
   generateVerificationKey,
   generateSolidityVerifier,
   verifyProof,
