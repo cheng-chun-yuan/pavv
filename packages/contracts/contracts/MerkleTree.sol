@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.21;
 
+import {Poseidon2Raw} from "./lib/Poseidon2Raw.sol";
+
 /**
  * @title Incremental Merkle Tree
- * @notice Depth-20 Merkle tree using Poseidon2 hash (placeholder: keccak256 for EVM).
- * @dev In production, this would use a Poseidon2 precompile or library.
- *      For hackathon demo, we use keccak256 truncated to fit Field.
- *      The ZK proof handles the real Poseidon2 verification.
+ * @notice Depth-20 Merkle tree using Poseidon2 hash (raw permutation mode).
+ * @dev Uses Poseidon2Raw which matches Noir's poseidon2_permutation([a,b,0,0],4)[0]
+ *      and the SDK's poseidon2Hash2(a, b).
  */
 contract MerkleTree {
     uint256 public constant TREE_DEPTH = 20;
@@ -68,11 +69,10 @@ contract MerkleTree {
     }
 
     /**
-     * @dev Hash two children to produce parent node.
-     *      Uses keccak256 truncated to BN254 field for on-chain.
-     *      The actual Poseidon2 verification happens inside the ZK proof.
+     * @dev Hash two children to produce parent node using Poseidon2 raw permutation.
+     *      Matches Noir circuit's hash_2(left, right) exactly.
      */
     function _hashPair(bytes32 left, bytes32 right) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(left, right));
+        return Poseidon2Raw.hash2(left, right);
     }
 }

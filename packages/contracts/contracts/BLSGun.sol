@@ -72,17 +72,19 @@ contract BLSGun is MerkleTree {
     /**
      * @notice Private Transfer: Move funds within the privacy pool.
      * @param nullifier The nullifier of the spent note (prevents double-spend).
+     * @param inputCommitment The commitment of the note being spent (proved in ZK).
      * @param outputCommitment The new note commitment for the recipient.
      * @param proof The ZK proof (proves FROST sig + tx validity inside ZK).
      *
-     * @dev The ZK proof implicitly verifies:
+     * @dev The ZK proof verifies:
      *      - The FROST 2-of-3 Schnorr signature is valid
      *      - The nullifier is correctly derived
-     *      - The commitment is correctly constructed
-     *      - The input note exists in the Merkle tree
+     *      - The inputCommitment matches the note data
+     *      - The inputCommitment exists in the Merkle tree at the proven root
      */
     function privateTransfer(
         bytes32 nullifier,
+        bytes32 inputCommitment,
         bytes32 outputCommitment,
         bytes calldata proof
     ) external {
@@ -90,12 +92,11 @@ contract BLSGun is MerkleTree {
         require(!nullifiers[nullifier], "Note already spent");
 
         // 2. Build public inputs array for verifier
-        // Public inputs: [nullifier, commitment, merkle_root]
-        // Noir public inputs are 19 total (16 from proof overhead + 3 from circuit)
-        // The actual public inputs from our circuit are the last 3
+        // Circuit public inputs: [nullifier, commitment, merkle_root]
+        // where commitment = the INPUT note's commitment (proved to be in tree)
         bytes32[] memory publicInputs = new bytes32[](3);
         publicInputs[0] = nullifier;
-        publicInputs[1] = outputCommitment;
+        publicInputs[1] = inputCommitment;
         publicInputs[2] = root;
 
         // 3. Verify ZK proof
@@ -104,7 +105,7 @@ contract BLSGun is MerkleTree {
         // 4. Mark nullifier as spent
         nullifiers[nullifier] = true;
 
-        // 5. Insert new commitment into Merkle tree
+        // 5. Insert new output commitment into Merkle tree
         _insertLeaf(outputCommitment);
 
         emit PrivateTransfer(nullifier, outputCommitment);
@@ -113,12 +114,14 @@ contract BLSGun is MerkleTree {
     /**
      * @notice Unshield: Withdraw funds from the privacy pool.
      * @param nullifier The nullifier of the spent note.
+     * @param inputCommitment The commitment of the note being spent (proved in ZK).
      * @param recipient The address to receive the withdrawn funds.
      * @param amount The amount to withdraw.
-     * @param proof The ZK proof.
+     * @param proof The ZK proof proving note ownership via FROST signature.
      */
     function unshield(
         bytes32 nullifier,
+        bytes32 inputCommitment,
         address payable recipient,
         uint256 amount,
         bytes calldata proof
@@ -130,10 +133,10 @@ contract BLSGun is MerkleTree {
             "Insufficient pool balance"
         );
 
-        // Build public inputs
+        // Build public inputs: same circuit [nullifier, commitment, merkle_root]
         bytes32[] memory publicInputs = new bytes32[](3);
         publicInputs[0] = nullifier;
-        publicInputs[1] = bytes32(amount); // amount as commitment for unshield
+        publicInputs[1] = inputCommitment;
         publicInputs[2] = root;
 
         // Verify ZK proof
