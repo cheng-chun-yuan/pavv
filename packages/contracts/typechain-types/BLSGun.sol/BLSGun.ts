@@ -80,13 +80,13 @@ export interface BLSGunInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "privateTransfer",
-    values: [BytesLike, BytesLike, BytesLike]
+    values: [BytesLike, BytesLike, BytesLike, BytesLike]
   ): string;
   encodeFunctionData(functionFragment: "root", values?: undefined): string;
   encodeFunctionData(functionFragment: "shield", values: [BytesLike]): string;
   encodeFunctionData(
     functionFragment: "unshield",
-    values: [BytesLike, AddressLike, BigNumberish, BytesLike]
+    values: [BytesLike, BytesLike, AddressLike, BigNumberish, BytesLike]
   ): string;
   encodeFunctionData(functionFragment: "verifier", values?: undefined): string;
   encodeFunctionData(
@@ -249,7 +249,12 @@ export interface BLSGun extends BaseContract {
   nullifiers: TypedContractMethod<[arg0: BytesLike], [boolean], "view">;
 
   privateTransfer: TypedContractMethod<
-    [nullifier: BytesLike, outputCommitment: BytesLike, proof: BytesLike],
+    [
+      nullifier: BytesLike,
+      inputCommitment: BytesLike,
+      outputCommitment: BytesLike,
+      proof: BytesLike
+    ],
     [void],
     "nonpayable"
   >;
@@ -261,6 +266,7 @@ export interface BLSGun extends BaseContract {
   unshield: TypedContractMethod<
     [
       nullifier: BytesLike,
+      inputCommitment: BytesLike,
       recipient: AddressLike,
       amount: BigNumberish,
       proof: BytesLike
@@ -304,7 +310,12 @@ export interface BLSGun extends BaseContract {
   getFunction(
     nameOrSignature: "privateTransfer"
   ): TypedContractMethod<
-    [nullifier: BytesLike, outputCommitment: BytesLike, proof: BytesLike],
+    [
+      nullifier: BytesLike,
+      inputCommitment: BytesLike,
+      outputCommitment: BytesLike,
+      proof: BytesLike
+    ],
     [void],
     "nonpayable"
   >;
@@ -319,6 +330,7 @@ export interface BLSGun extends BaseContract {
   ): TypedContractMethod<
     [
       nullifier: BytesLike,
+      inputCommitment: BytesLike,
       recipient: AddressLike,
       amount: BigNumberish,
       proof: BytesLike

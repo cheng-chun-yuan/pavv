@@ -6,12 +6,20 @@
     "build": "hardhat compile",
     "test": "hardhat test",
     "node": "hardhat node",
-    "deploy:local": "hardhat run scripts/deploy.ts --network localhost"
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "test:poseidon2": "bun run scripts/verify-poseidon2.ts",
+    "test:e2e": "bun run scripts/relayer-e2e.ts",
+    "test:full-flow": "bun run scripts/full-flow-e2e.ts",
+    "test:frost": "bun run scripts/frost-proof-e2e.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "hardhat": "^2.22.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "ethers": "^6",
+    "poseidon2-evm": "^1.0.0"
   }
 }
