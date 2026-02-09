@@ -1,4 +1,4 @@
-# pavv - Privacy-Preserving B2B Treasury
+# Pavv - Privacy-Preserving B2B Treasury
 
 ## The Problem
 
