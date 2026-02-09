@@ -80,10 +80,22 @@ export interface BLSGunInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "privateTransfer",
-    values: [BytesLike, BytesLike, BytesLike, BytesLike]
+    values: [
+      BytesLike,
+      BytesLike,
+      BytesLike,
+      BytesLike,
+      BytesLike,
+      BytesLike,
+      BigNumberish,
+      BigNumberish
+    ]
   ): string;
   encodeFunctionData(functionFragment: "root", values?: undefined): string;
-  encodeFunctionData(functionFragment: "shield", values: [BytesLike]): string;
+  encodeFunctionData(
+    functionFragment: "shield",
+    values: [BytesLike, BytesLike, BytesLike, BigNumberish, BigNumberish]
+  ): string;
   encodeFunctionData(
     functionFragment: "unshield",
     values: [BytesLike, BytesLike, AddressLike, BigNumberish, BytesLike]
@@ -129,11 +141,29 @@ export interface BLSGunInterface extends Interface {
 }
 
 export namespace PrivateTransferEvent {
-  export type InputTuple = [nullifier: BytesLike, outputCommitment: BytesLike];
-  export type OutputTuple = [nullifier: string, outputCommitment: string];
+  export type InputTuple = [
+    nullifier: BytesLike,
+    outputCommitment: BytesLike,
+    ephPubKeyX: BytesLike,
+    ephPubKeyY: BytesLike,
+    viewTag: BigNumberish,
+    encryptedAmount: BigNumberish
+  ];
+  export type OutputTuple = [
+    nullifier: string,
+    outputCommitment: string,
+    ephPubKeyX: string,
+    ephPubKeyY: string,
+    viewTag: bigint,
+    encryptedAmount: bigint
+  ];
   export interface OutputObject {
     nullifier: string;
     outputCommitment: string;
+    ephPubKeyX: string;
+    ephPubKeyY: string;
+    viewTag: bigint;
+    encryptedAmount: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -145,17 +175,26 @@ export namespace ShieldEvent {
   export type InputTuple = [
     sender: AddressLike,
     commitment: BytesLike,
-    amount: BigNumberish
+    ephPubKeyX: BytesLike,
+    ephPubKeyY: BytesLike,
+    viewTag: BigNumberish,
+    encryptedAmount: BigNumberish
   ];
   export type OutputTuple = [
     sender: string,
     commitment: string,
-    amount: bigint
+    ephPubKeyX: string,
+    ephPubKeyY: string,
+    viewTag: bigint,
+    encryptedAmount: bigint
   ];
   export interface OutputObject {
     sender: string;
     commitment: string;
-    amount: bigint;
+    ephPubKeyX: string;
+    ephPubKeyY: string;
+    viewTag: bigint;
+    encryptedAmount: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -253,7 +292,11 @@ export interface BLSGun extends BaseContract {
       nullifier: BytesLike,
       inputCommitment: BytesLike,
       outputCommitment: BytesLike,
-      proof: BytesLike
+      proof: BytesLike,
+      ephPubKeyX: BytesLike,
+      ephPubKeyY: BytesLike,
+      viewTag: BigNumberish,
+      encryptedAmount: BigNumberish
     ],
     [void],
     "nonpayable"
@@ -261,7 +304,17 @@ export interface BLSGun extends BaseContract {
 
   root: TypedContractMethod<[], [string], "view">;
 
-  shield: TypedContractMethod<[commitment: BytesLike], [void], "payable">;
+  shield: TypedContractMethod<
+    [
+      commitment: BytesLike,
+      ephPubKeyX: BytesLike,
+      ephPubKeyY: BytesLike,
+      viewTag: BigNumberish,
+      encryptedAmount: BigNumberish
+    ],
+    [void],
+    "payable"
+  >;
 
   unshield: TypedContractMethod<
     [
@@ -314,7 +367,11 @@ export interface BLSGun extends BaseContract {
       nullifier: BytesLike,
       inputCommitment: BytesLike,
       outputCommitment: BytesLike,
-      proof: BytesLike
+      proof: BytesLike,
+      ephPubKeyX: BytesLike,
+      ephPubKeyY: BytesLike,
+      viewTag: BigNumberish,
+      encryptedAmount: BigNumberish
     ],
     [void],
     "nonpayable"
@@ -324,7 +381,17 @@ export interface BLSGun extends BaseContract {
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "shield"
-  ): TypedContractMethod<[commitment: BytesLike], [void], "payable">;
+  ): TypedContractMethod<
+    [
+      commitment: BytesLike,
+      ephPubKeyX: BytesLike,
+      ephPubKeyY: BytesLike,
+      viewTag: BigNumberish,
+      encryptedAmount: BigNumberish
+    ],
+    [void],
+    "payable"
+  >;
   getFunction(
     nameOrSignature: "unshield"
   ): TypedContractMethod<
@@ -368,7 +435,7 @@ export interface BLSGun extends BaseContract {
   >;
 
   filters: {
-    "PrivateTransfer(bytes32,bytes32)": TypedContractEvent<
+    "PrivateTransfer(bytes32,bytes32,bytes32,bytes32,uint8,uint128)": TypedContractEvent<
       PrivateTransferEvent.InputTuple,
       PrivateTransferEvent.OutputTuple,
       PrivateTransferEvent.OutputObject
@@ -379,7 +446,7 @@ export interface BLSGun extends BaseContract {
       PrivateTransferEvent.OutputObject
     >;
 
-    "Shield(address,bytes32,uint256)": TypedContractEvent<
+    "Shield(address,bytes32,bytes32,bytes32,uint8,uint128)": TypedContractEvent<
       ShieldEvent.InputTuple,
       ShieldEvent.OutputTuple,
       ShieldEvent.OutputObject

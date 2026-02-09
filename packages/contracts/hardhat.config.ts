@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 
@@ -7,7 +8,7 @@ const config: HardhatUserConfig = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 200,
+        runs: 10,
       },
       evmVersion: "cancun",
     },
@@ -30,6 +31,30 @@ const config: HardhatUserConfig = {
       chainId: 1030,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
+  },
+  etherscan: {
+    apiKey: {
+      confluxTestnet: "espace",
+      confluxMainnet: "espace",
+    },
+    customChains: [
+      {
+        network: "confluxTestnet",
+        chainId: 71,
+        urls: {
+          apiURL: "https://evmapi-testnet.confluxscan.org/api/",
+          browserURL: "https://evmtestnet.confluxscan.org/",
+        },
+      },
+      {
+        network: "confluxMainnet",
+        chainId: 1030,
+        urls: {
+          apiURL: "https://evmapi.confluxscan.org/api/",
+          browserURL: "https://evmtestnet.confluxscan.org/",
+        },
+      },
+    ],
   },
 };
 

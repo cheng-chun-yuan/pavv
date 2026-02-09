@@ -2,15 +2,15 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/chengchunyuan/project/hackathon/blsgun/packages/contracts/contracts/BLSGun.sol": {
-      "lastModificationDate": 1770557602746,
-      "contentHash": "97932ef65576987b3efeed8c7f2ee255",
+      "lastModificationDate": 1770568182715,
+      "contentHash": "327c1c1a4e5fa8790155612724442a75",
       "sourceName": "contracts/BLSGun.sol",
       "solcConfig": {
         "version": "0.8.27",
         "settings": {
           "optimizer": {
             "enabled": true,
-            "runs": 200
+            "runs": 10
           },
           "evmVersion": "cancun",
           "outputSelection": {
@@ -49,7 +49,7 @@
         "settings": {
           "optimizer": {
             "enabled": true,
-            "runs": 200
+            "runs": 10
           },
           "evmVersion": "cancun",
           "outputSelection": {
@@ -79,15 +79,15 @@
       ]
     },
     "/Users/chengchunyuan/project/hackathon/blsgun/packages/contracts/contracts/Verifier.sol": {
-      "lastModificationDate": 1770557215778,
-      "contentHash": "7702e9c4e762e778fb37196c8272ac2f",
+      "lastModificationDate": 1770598745881,
+      "contentHash": "87da68787171d8ab2d77a5d6538f9aec",
       "sourceName": "contracts/Verifier.sol",
       "solcConfig": {
         "version": "0.8.27",
         "settings": {
           "optimizer": {
             "enabled": true,
-            "runs": 200
+            "runs": 10
           },
           "evmVersion": "cancun",
           "outputSelection": {
@@ -132,7 +132,7 @@
         "settings": {
           "optimizer": {
             "enabled": true,
-            "runs": 200
+            "runs": 10
           },
           "evmVersion": "cancun",
           "outputSelection": {
@@ -171,7 +171,7 @@
         "settings": {
           "optimizer": {
             "enabled": true,
-            "runs": 200
+            "runs": 10
           },
           "evmVersion": "cancun",
           "outputSelection": {
@@ -207,7 +207,7 @@
         "settings": {
           "optimizer": {
             "enabled": true,
-            "runs": 200
+            "runs": 10
           },
           "evmVersion": "cancun",
           "outputSelection": {

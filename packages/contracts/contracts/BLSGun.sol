@@ -37,12 +37,19 @@ contract BLSGun is MerkleTree {
     event Shield(
         address indexed sender,
         bytes32 indexed commitment,
-        uint256 amount
+        bytes32 ephPubKeyX,
+        bytes32 ephPubKeyY,
+        uint8   viewTag,
+        uint128 encryptedAmount
     );
 
     event PrivateTransfer(
         bytes32 indexed nullifier,
-        bytes32 indexed outputCommitment
+        bytes32 indexed outputCommitment,
+        bytes32 ephPubKeyX,
+        bytes32 ephPubKeyY,
+        uint8   viewTag,
+        uint128 encryptedAmount
     );
 
     event Unshield(
@@ -58,15 +65,25 @@ contract BLSGun is MerkleTree {
     /**
      * @notice Shield: Deposit tokens into the privacy pool.
      * @param commitment The Poseidon commitment hiding the note details.
+     * @param ephPubKeyX Ephemeral public key X (for stealth ECDH).
+     * @param ephPubKeyY Ephemeral public key Y (for stealth ECDH).
+     * @param viewTag 1-byte view tag for fast scanning (EIP-5564).
+     * @param encryptedAmount XOR-encrypted amount (one-time pad from ECDH).
      * @dev Accepts native CFX. The commitment is inserted into the Merkle tree.
      */
-    function shield(bytes32 commitment) external payable {
+    function shield(
+        bytes32 commitment,
+        bytes32 ephPubKeyX,
+        bytes32 ephPubKeyY,
+        uint8   viewTag,
+        uint128 encryptedAmount
+    ) external payable {
         require(msg.value > 0, "Must deposit value");
         require(commitment != bytes32(0), "Invalid commitment");
 
         _insertLeaf(commitment);
 
-        emit Shield(msg.sender, commitment, msg.value);
+        emit Shield(msg.sender, commitment, ephPubKeyX, ephPubKeyY, viewTag, encryptedAmount);
     }
 
     /**
@@ -86,7 +103,11 @@ contract BLSGun is MerkleTree {
         bytes32 nullifier,
         bytes32 inputCommitment,
         bytes32 outputCommitment,
-        bytes calldata proof
+        bytes calldata proof,
+        bytes32 ephPubKeyX,
+        bytes32 ephPubKeyY,
+        uint8   viewTag,
+        uint128 encryptedAmount
     ) external {
         // 1. Check nullifier not already spent
         require(!nullifiers[nullifier], "Note already spent");
@@ -108,7 +129,7 @@ contract BLSGun is MerkleTree {
         // 5. Insert new output commitment into Merkle tree
         _insertLeaf(outputCommitment);
 
-        emit PrivateTransfer(nullifier, outputCommitment);
+        emit PrivateTransfer(nullifier, outputCommitment, ephPubKeyX, ephPubKeyY, viewTag, encryptedAmount);
     }
 
     /**

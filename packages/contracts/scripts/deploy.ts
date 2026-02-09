@@ -39,20 +39,28 @@ async function main() {
   const blsgunAddr = await blsgun.getAddress();
   console.log("BLSGun deployed to:", blsgunAddr);
 
-  // 3. Fund the contract with 10 ETH via shield() with a dummy commitment
-  console.log("\nFunding BLSGun with 10 ETH via shield()...");
-  const dummyCommitment = ethers.keccak256(ethers.toUtf8Bytes("demo-deposit"));
-  const tx = await blsgun.shield(dummyCommitment, {
-    value: ethers.parseEther("10"),
-  });
-  await tx.wait();
+  // 3. Get network info
+  const network = await ethers.provider.getNetwork();
+  const chainId = Number(network.chainId);
+  const isLocal = chainId === 31337;
+
+  // Fund on local networks only
+  if (isLocal) {
+    console.log("\nFunding BLSGun with 10 ETH via shield()...");
+    const dummyCommitment = ethers.keccak256(ethers.toUtf8Bytes("demo-deposit"));
+    const tx = await blsgun.shield(dummyCommitment, ethers.ZeroHash, ethers.ZeroHash, 0, 0, {
+      value: ethers.parseEther("10"),
+    });
+    await tx.wait();
+  }
 
   const contractBalance = await ethers.provider.getBalance(blsgunAddr);
-  console.log("BLSGun balance:", ethers.formatEther(contractBalance), "ETH");
+  console.log("BLSGun balance:", ethers.formatEther(contractBalance), "CFX");
 
   // 4. Write deployment addresses to JSON
+  const networkName = isLocal ? "localhost" : chainId === 71 ? "confluxTestnet" : `chain-${chainId}`;
   const deployment = {
-    chainId: 31337,
+    chainId,
     verifier: verifierAddr,
     blsgun: blsgunAddr,
     deployer: deployer.address,
@@ -63,7 +71,7 @@ async function main() {
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
   }
-  const outPath = path.join(outDir, "localhost.json");
+  const outPath = path.join(outDir, `${networkName}.json`);
   fs.writeFileSync(outPath, JSON.stringify(deployment, null, 2));
   console.log("\nDeployment saved to:", outPath);
 

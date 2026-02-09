@@ -1,7 +1,7 @@
 {
   "chainId": 31337,
-  "verifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-  "blsgun": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  "timestamp": "2026-02-08T03:34:01.923Z"
+  "verifier": "0x69DD92E19A0044280a38c367150889F06c75dE9A",
+  "blsgun": "0x002b1a43796738bb2612Effc58D690051d3496fb",
+  "deployer": "0x8FFc70DbB490Fcb6Aa3b3Dbc4082e5a21AC3f66f",
+  "timestamp": "2026-02-08T16:36:24.917Z"
 }

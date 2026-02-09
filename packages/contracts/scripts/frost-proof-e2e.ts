@@ -17,7 +17,17 @@
  *   Terminal 1: cd packages/contracts && bun run node
  *   Terminal 2: cd packages/contracts && bun run test:frost
  */
-import { ethers } from "ethers";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  parseEther,
+  formatEther,
+  type Hex,
+  type Address,
+} from "viem";
+import { hardhat } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { execSync } from "child_process";
@@ -38,14 +48,32 @@ import {
   type MasterKeyPackage,
 } from "../../sdk/src/index.ts";
 
-// ─── Paths ────────────────────────────────────────────────────────────────────
+// -- Paths --
 
 const CONTRACTS_DIR = resolve(import.meta.dir, "..");
 const CIRCUITS_DIR = resolve(CONTRACTS_DIR, "../circuits");
 const TARGET_DIR = join(CIRCUITS_DIR, "target");
 const ARTIFACTS_DIR = join(CONTRACTS_DIR, "artifacts/contracts");
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// -- Clients --
+
+const DEPLOYER_PK = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as const;
+const deployerAccount = privateKeyToAccount(DEPLOYER_PK);
+
+const publicClient = createPublicClient({
+  chain: hardhat,
+  transport: http("http://127.0.0.1:8545"),
+});
+
+const walletClient = createWalletClient({
+  account: deployerAccount,
+  chain: hardhat,
+  transport: http("http://127.0.0.1:8545"),
+});
+
+const ZERO_BYTES32: Hex = `0x${"0".repeat(64)}`;
+
+// -- Helpers --
 
 function loadArtifact(path: string) {
   return JSON.parse(readFileSync(join(ARTIFACTS_DIR, path), "utf-8"));
@@ -63,8 +91,8 @@ function toProverToml(inputs: CircuitInputs): string {
   return lines.join("\n");
 }
 
-function toBytes32(n: bigint): string {
-  return "0x" + n.toString(16).padStart(64, "0");
+function toBytes32(n: bigint): Hex {
+  return `0x${n.toString(16).padStart(64, "0")}`;
 }
 
 /** Try to generate witness — returns true if circuit accepts, false if it rejects */
@@ -82,13 +110,12 @@ function tryWitness(inputs: CircuitInputs): boolean {
 /** Generate a full EVM proof from circuit inputs */
 function generateProofAndInputs(
   inputs: CircuitInputs,
-): { proofBytes: string; publicInputs: string[] } {
+): { proofBytes: Hex; publicInputs: Hex[] } {
   if (!existsSync(TARGET_DIR)) {
     mkdirSync(TARGET_DIR, { recursive: true });
   }
 
-  const proverToml = toProverToml(inputs);
-  writeFileSync(join(CIRCUITS_DIR, "Prover.toml"), proverToml);
+  writeFileSync(join(CIRCUITS_DIR, "Prover.toml"), toProverToml(inputs));
 
   const bytecodeFile = join(TARGET_DIR, "blsgun.json");
   if (!existsSync(bytecodeFile)) {
@@ -104,21 +131,55 @@ function generateProofAndInputs(
   const proofData = new Uint8Array(readFileSync(join(TARGET_DIR, "proof")));
   const piData = new Uint8Array(readFileSync(join(TARGET_DIR, "public_inputs")));
 
-  const publicInputs: string[] = [];
+  const publicInputs: Hex[] = [];
   for (let i = 0; i < piData.length / 32; i++) {
-    publicInputs.push("0x" + Buffer.from(piData.slice(i * 32, (i + 1) * 32)).toString("hex"));
+    publicInputs.push(("0x" + Buffer.from(piData.slice(i * 32, (i + 1) * 32)).toString("hex")) as Hex);
   }
 
   return {
-    proofBytes: "0x" + Buffer.from(proofData).toString("hex"),
+    proofBytes: ("0x" + Buffer.from(proofData).toString("hex")) as Hex,
     publicInputs,
   };
 }
 
+// -- BLSGun ABI (minimal for this test) --
+
+const blsGunAbi = [
+  {
+    type: "function" as const,
+    name: "shield" as const,
+    stateMutability: "payable" as const,
+    inputs: [
+      { name: "commitment", type: "bytes32" as const },
+      { name: "ephPubKeyX", type: "bytes32" as const },
+      { name: "ephPubKeyY", type: "bytes32" as const },
+      { name: "viewTag", type: "uint8" as const },
+      { name: "encryptedAmount", type: "uint128" as const },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function" as const,
+    name: "privateTransfer" as const,
+    stateMutability: "nonpayable" as const,
+    inputs: [
+      { name: "nullifier", type: "bytes32" as const },
+      { name: "inputCommitment", type: "bytes32" as const },
+      { name: "outputCommitment", type: "bytes32" as const },
+      { name: "proof", type: "bytes" as const },
+      { name: "ephPubKeyX", type: "bytes32" as const },
+      { name: "ephPubKeyY", type: "bytes32" as const },
+      { name: "viewTag", type: "uint8" as const },
+      { name: "encryptedAmount", type: "uint128" as const },
+    ],
+    outputs: [],
+  },
+] as const;
+
 /** Build circuit inputs for a spend with a specific signer pair */
 function buildInputsForSignerPair(
   pkg: MasterKeyPackage,
-  signerIdxA: number, // 0-based index into pkg.shares
+  signerIdxA: number,
   signerIdxB: number,
   nonceIdx: number,
   spendKey: bigint,
@@ -154,36 +215,40 @@ function buildInputsForSignerPair(
   );
 }
 
-// ─── Deploy ───────────────────────────────────────────────────────────────────
+// -- Deploy --
 
-async function deploy(signer: ethers.Signer) {
+async function deploy(): Promise<Address> {
   const transcriptArtifact = loadArtifact("Verifier.sol/ZKTranscriptLib.json");
-  const transcriptLib = await new ethers.ContractFactory(
-    transcriptArtifact.abi, transcriptArtifact.bytecode, signer,
-  ).deploy();
-  await transcriptLib.waitForDeployment();
-  const libAddr = await transcriptLib.getAddress();
+  const libHash = await walletClient.deployContract({
+    abi: transcriptArtifact.abi,
+    bytecode: transcriptArtifact.bytecode as Hex,
+  });
+  const libReceipt = await publicClient.waitForTransactionReceipt({ hash: libHash });
+  const libAddr = libReceipt.contractAddress!;
 
   const verifierArtifact = loadArtifact("Verifier.sol/HonkVerifier.json");
-  const linkedBytecode = verifierArtifact.bytecode.replace(
-    /__\$[0-9a-fA-F]{34}\$__/g, libAddr.slice(2).toLowerCase(),
-  );
-  const verifier = await new ethers.ContractFactory(
-    verifierArtifact.abi, linkedBytecode, signer,
-  ).deploy();
-  await verifier.waitForDeployment();
-  const verifierAddr = await verifier.getAddress();
+  const linkedBytecode = (verifierArtifact.bytecode as string).replace(
+    /__\$[0-9a-fA-F]{34}\$__/g,
+    libAddr.slice(2).toLowerCase(),
+  ) as Hex;
+  const verifierHash = await walletClient.deployContract({
+    abi: verifierArtifact.abi,
+    bytecode: linkedBytecode,
+  });
+  const verifierReceipt = await publicClient.waitForTransactionReceipt({ hash: verifierHash });
+  const verifierAddr = verifierReceipt.contractAddress!;
 
   const blsgunArtifact = loadArtifact("BLSGun.sol/BLSGun.json");
-  const blsgun = await new ethers.ContractFactory(
-    blsgunArtifact.abi, blsgunArtifact.bytecode, signer,
-  ).deploy(verifierAddr);
-  await blsgun.waitForDeployment();
-
-  return blsgun;
+  const blsgunHash = await walletClient.deployContract({
+    abi: blsgunArtifact.abi,
+    bytecode: blsgunArtifact.bytecode as Hex,
+    args: [verifierAddr],
+  });
+  const blsgunReceipt = await publicClient.waitForTransactionReceipt({ hash: blsgunHash });
+  return blsgunReceipt.contractAddress!;
 }
 
-// ─── Test Runner ──────────────────────────────────────────────────────────────
+// -- Test Runner --
 
 let passed = 0;
 let failed = 0;
@@ -198,23 +263,14 @@ function fail(name: string, reason: string) {
   console.log(`        ${reason}`);
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// -- Main --
 
 async function main() {
-  console.log("╔═══════════════════════════════════════════════╗");
-  console.log("║  FROST TSS → ZK Proof → On-Chain Verify Test ║");
-  console.log("╚═══════════════════════════════════════════════╝\n");
+  console.log("+=================================================+");
+  console.log("|  FROST TSS -> ZK Proof -> On-Chain Verify Test   |");
+  console.log("+=================================================+\n");
 
   await initHash();
-
-  const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
-  const accounts = await provider.listAccounts();
-  const deployer = accounts[0];
-
-  // Deploy contracts
-  console.log("[Setup] Deploying contracts...");
-  const blsgun = await deploy(deployer);
-  console.log("  BLSGun:", await blsgun.getAddress());
 
   // Generate FROST 2-of-3 keys
   console.log("[Setup] Generating FROST 2-of-3 keys...");
@@ -222,7 +278,7 @@ async function main() {
   const spendKey = poseidon2Hash2(pkg.groupPublicKey.x, pkg.groupPublicKey.y);
   console.log("  Group PK:", toBytes32(pkg.groupPublicKey.x).slice(0, 22) + "...");
 
-  // Create note and shield on-chain
+  // Create note
   const amount = 1000000n;
   const blinding = 0xdeadbeefn;
   const commitment = computeCommitment(spendKey, amount, blinding);
@@ -230,34 +286,22 @@ async function main() {
   const tree = new MerkleTree(20);
   tree.insert(commitment);
 
-  // Shield 3 separate deposits (need 3 notes, one per signer-pair test)
-  console.log("[Setup] Shielding 3 deposits...");
-  for (let i = 0; i < 3; i++) {
-    await (blsgun as any).connect(deployer).shield(
-      toBytes32(commitment),
-      { value: ethers.parseEther("1") },
-    );
-  }
-  console.log("  Contract balance:", ethers.formatEther(await provider.getBalance(await blsgun.getAddress())), "ETH");
-
-  // Note: all 3 shield calls use the same commitment, but the Merkle tree on-chain
-  // has 3 copies. Our local tree only has 1 (at index 0). The on-chain root won't match
-  // for index 0 after multiple inserts. So let's use a fresh approach:
-  // Reset — deploy fresh, shield once per test.
-
-  // Actually simpler: for the ZK proof tests, we just need the circuit to accept.
-  // For on-chain verify, we need the merkle root to match.
-  // Let's do: deploy fresh for each on-chain test, use just witness check for the fast tests.
-
-  console.log("\n────────────────────────────────────────────────");
-  console.log("Test 1: FROST signers (1,2) → ZK proof + on-chain verify");
-  console.log("────────────────────────────────────────────────");
+  console.log("\n--------------------------------------------");
+  console.log("Test 1: FROST signers (1,2) -> ZK proof + on-chain verify");
+  console.log("--------------------------------------------");
   {
-    // Fresh deploy + shield
-    const gun = await deploy(deployer);
-    await (gun as any).connect(deployer).shield(
-      toBytes32(commitment), { value: ethers.parseEther("1") },
-    );
+    const gun = await deploy();
+    console.log("  [Setup] Deploying contracts...");
+    console.log("  BLSGun:", gun);
+
+    const shieldHash = await walletClient.writeContract({
+      address: gun,
+      abi: blsGunAbi,
+      functionName: "shield",
+      args: [toBytes32(commitment), ZERO_BYTES32, ZERO_BYTES32, 0, 0n],
+      value: parseEther("1"),
+    });
+    await publicClient.waitForTransactionReceipt({ hash: shieldHash });
 
     const inputs = buildInputsForSignerPair(pkg, 0, 1, 0, spendKey, amount, blinding, commitment, 0, tree);
 
@@ -265,30 +309,40 @@ async function main() {
     const { proofBytes, publicInputs } = generateProofAndInputs(inputs);
     console.log("  Proof size:", (proofBytes.length - 2) / 2, "bytes");
 
-    // Submit on-chain with a dummy output
     const outputCommitment = computeCommitment(999n, amount, 0x42n);
     try {
-      const tx = await (gun as any).connect(deployer).privateTransfer(
-        publicInputs[0], // nullifier
-        publicInputs[1], // inputCommitment
-        toBytes32(outputCommitment),
-        proofBytes,
-      );
-      await tx.wait();
+      const txHash = await walletClient.writeContract({
+        address: gun,
+        abi: blsGunAbi,
+        functionName: "privateTransfer",
+        args: [
+          publicInputs[0],
+          publicInputs[1],
+          toBytes32(outputCommitment),
+          proofBytes,
+          ZERO_BYTES32, ZERO_BYTES32, 0, 0n,
+        ],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: txHash });
       ok("Signers (1,2): proof accepted on-chain");
     } catch (e: any) {
       fail("Signers (1,2)", e.message?.slice(0, 120));
     }
   }
 
-  console.log("\n────────────────────────────────────────────────");
-  console.log("Test 2: FROST signers (1,3) → ZK proof + on-chain verify");
-  console.log("────────────────────────────────────────────────");
+  console.log("\n--------------------------------------------");
+  console.log("Test 2: FROST signers (1,3) -> ZK proof + on-chain verify");
+  console.log("--------------------------------------------");
   {
-    const gun = await deploy(deployer);
-    await (gun as any).connect(deployer).shield(
-      toBytes32(commitment), { value: ethers.parseEther("1") },
-    );
+    const gun = await deploy();
+    const shieldHash = await walletClient.writeContract({
+      address: gun,
+      abi: blsGunAbi,
+      functionName: "shield",
+      args: [toBytes32(commitment), ZERO_BYTES32, ZERO_BYTES32, 0, 0n],
+      value: parseEther("1"),
+    });
+    await publicClient.waitForTransactionReceipt({ hash: shieldHash });
 
     const inputs = buildInputsForSignerPair(pkg, 0, 2, 1, spendKey, amount, blinding, commitment, 0, tree);
 
@@ -297,27 +351,38 @@ async function main() {
 
     const outputCommitment = computeCommitment(888n, amount, 0x43n);
     try {
-      const tx = await (gun as any).connect(deployer).privateTransfer(
-        publicInputs[0],
-        publicInputs[1],
-        toBytes32(outputCommitment),
-        proofBytes,
-      );
-      await tx.wait();
+      const txHash = await walletClient.writeContract({
+        address: gun,
+        abi: blsGunAbi,
+        functionName: "privateTransfer",
+        args: [
+          publicInputs[0],
+          publicInputs[1],
+          toBytes32(outputCommitment),
+          proofBytes,
+          ZERO_BYTES32, ZERO_BYTES32, 0, 0n,
+        ],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: txHash });
       ok("Signers (1,3): proof accepted on-chain");
     } catch (e: any) {
       fail("Signers (1,3)", e.message?.slice(0, 120));
     }
   }
 
-  console.log("\n────────────────────────────────────────────────");
-  console.log("Test 3: FROST signers (2,3) → ZK proof + on-chain verify");
-  console.log("────────────────────────────────────────────────");
+  console.log("\n--------------------------------------------");
+  console.log("Test 3: FROST signers (2,3) -> ZK proof + on-chain verify");
+  console.log("--------------------------------------------");
   {
-    const gun = await deploy(deployer);
-    await (gun as any).connect(deployer).shield(
-      toBytes32(commitment), { value: ethers.parseEther("1") },
-    );
+    const gun = await deploy();
+    const shieldHash = await walletClient.writeContract({
+      address: gun,
+      abi: blsGunAbi,
+      functionName: "shield",
+      args: [toBytes32(commitment), ZERO_BYTES32, ZERO_BYTES32, 0, 0n],
+      value: parseEther("1"),
+    });
+    await publicClient.waitForTransactionReceipt({ hash: shieldHash });
 
     const inputs = buildInputsForSignerPair(pkg, 1, 2, 2, spendKey, amount, blinding, commitment, 0, tree);
 
@@ -326,22 +391,28 @@ async function main() {
 
     const outputCommitment = computeCommitment(777n, amount, 0x44n);
     try {
-      const tx = await (gun as any).connect(deployer).privateTransfer(
-        publicInputs[0],
-        publicInputs[1],
-        toBytes32(outputCommitment),
-        proofBytes,
-      );
-      await tx.wait();
+      const txHash = await walletClient.writeContract({
+        address: gun,
+        abi: blsGunAbi,
+        functionName: "privateTransfer",
+        args: [
+          publicInputs[0],
+          publicInputs[1],
+          toBytes32(outputCommitment),
+          proofBytes,
+          ZERO_BYTES32, ZERO_BYTES32, 0, 0n,
+        ],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: txHash });
       ok("Signers (2,3): proof accepted on-chain");
     } catch (e: any) {
       fail("Signers (2,3)", e.message?.slice(0, 120));
     }
   }
 
-  console.log("\n────────────────────────────────────────────────");
-  console.log("Test 4: Tampered signature → circuit rejects");
-  console.log("────────────────────────────────────────────────");
+  console.log("\n--------------------------------------------");
+  console.log("Test 4: Tampered signature -> circuit rejects");
+  console.log("--------------------------------------------");
   {
     const inputs = buildInputsForSignerPair(pkg, 0, 1, 3, spendKey, amount, blinding, commitment, 0, tree);
 
@@ -357,9 +428,9 @@ async function main() {
     }
   }
 
-  console.log("\n────────────────────────────────────────────────");
-  console.log("Test 5: Wrong group public key → circuit rejects");
-  console.log("────────────────────────────────────────────────");
+  console.log("\n--------------------------------------------");
+  console.log("Test 5: Wrong group public key -> circuit rejects");
+  console.log("--------------------------------------------");
   {
     const inputs = buildInputsForSignerPair(pkg, 0, 1, 4, spendKey, amount, blinding, commitment, 0, tree);
 
@@ -376,11 +447,10 @@ async function main() {
     }
   }
 
-  console.log("\n────────────────────────────────────────────────");
-  console.log("Test 6: Wrong spending key → circuit rejects (commitment mismatch)");
-  console.log("────────────────────────────────────────────────");
+  console.log("\n--------------------------------------------");
+  console.log("Test 6: Wrong spending key -> circuit rejects (commitment mismatch)");
+  console.log("--------------------------------------------");
   {
-    // Build inputs with correct signature but wrong spending key
     const wrongSpendKey = poseidon2Hash2(42n, 43n);
     const merkleProof = tree.generateProof(0);
     const nullifier = computeNullifier(wrongSpendKey, 0n);
@@ -411,9 +481,9 @@ async function main() {
     }
   }
 
-  console.log("\n────────────────────────────────────────────────");
-  console.log("Test 7: Wrong nullifier → circuit rejects");
-  console.log("────────────────────────────────────────────────");
+  console.log("\n--------------------------------------------");
+  console.log("Test 7: Wrong nullifier -> circuit rejects");
+  console.log("--------------------------------------------");
   {
     const inputs = buildInputsForSignerPair(pkg, 0, 1, 6, spendKey, amount, blinding, commitment, 0, tree);
 
@@ -428,14 +498,12 @@ async function main() {
     }
   }
 
-  console.log("\n────────────────────────────────────────────────");
-  console.log("Test 8: Wrong message (sign different M) → circuit rejects");
-  console.log("────────────────────────────────────────────────");
+  console.log("\n--------------------------------------------");
+  console.log("Test 8: Wrong message (sign different M) -> circuit rejects");
+  console.log("--------------------------------------------");
   {
-    // Build valid inputs first
     const merkleProof = tree.generateProof(0);
     const nullifier = computeNullifier(spendKey, 0n);
-    // Sign a WRONG message (not hash_2(nullifier, commitment))
     const wrongMessage = poseidon2Hash2(42n, 43n);
 
     const sA = createSignerKeyMaterial(pkg, 0, 8);
@@ -450,7 +518,6 @@ async function main() {
       pkg.threshold,
     );
 
-    // Signature is valid for wrongMessage, but circuit computes message = hash_2(nullifier, commitment)
     if (!frostVerify(sig, wrongMessage, pkg.groupPublicKey)) {
       throw new Error("Off-chain verify of wrong-message sig should pass");
     }
@@ -468,11 +535,11 @@ async function main() {
     }
   }
 
-  // ─── Summary ────────────────────────────────────────────────────────────────
+  // -- Summary --
 
-  console.log("\n══════════════════════════════════════════════════");
+  console.log("\n==================================================");
   console.log(`  Results: ${passed} passed, ${failed} failed`);
-  console.log("══════════════════════════════════════════════════\n");
+  console.log("==================================================\n");
 
   if (failed > 0) {
     process.exit(1);
