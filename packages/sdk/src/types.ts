@@ -120,6 +120,7 @@ export interface StealthAddress {
   address: GrumpkinPoint; // One-time stealth public key
   ephemeralPublicKey: GrumpkinPoint; // Published on-chain for recipient to find
   viewTag: bigint; // Short tag for efficient scanning
+  stealthScalar: bigint; // Sender uses for XOR amount encryption
 }
 
 // ─── Signing Session Types ────────────────────────────────────────────────────

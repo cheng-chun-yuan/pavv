@@ -66,12 +66,13 @@ export function generateStealthAddress(
   );
 
   // 5. View tag for efficient scanning (just the low bits of the hash)
-  const viewTag = stealthScalar & ((1n << 64n) - 1n);
+  const viewTag = stealthScalar & 0xFFn;
 
   return {
     address: toAffine(stealthPoint),
     ephemeralPublicKey: ephemeralPk,
     viewTag,
+    stealthScalar,
   };
 }
 
@@ -100,7 +101,7 @@ export function checkStealthAddress(
   const stealthScalar = poseidon2Hash2(sharedSecret.x, sharedSecret.y);
 
   // Check view tag
-  const expectedViewTag = stealthScalar & ((1n << 64n) - 1n);
+  const expectedViewTag = stealthScalar & 0xFFn;
   if (expectedViewTag !== viewTag) return null;
 
   return stealthScalar;

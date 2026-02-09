@@ -19,6 +19,7 @@ import {
   randomScalar,
   pointEqual,
 } from "./grumpkin.js";
+import { evaluateDerivative } from "./keygen.js";
 
 // ── Types ──
 
@@ -38,6 +39,18 @@ export interface CeremonyResult {
   viewingSecretKey: bigint;
   viewingPublicKey: GrumpkinPoint;
   polynomialCommitments: GrumpkinPoint[]; // Feldman VSS: [coeff_j]G
+}
+
+export interface HierarchicalCeremonyConfig {
+  threshold: number;
+  signers: { index: number; rank: number }[];
+}
+
+export interface HierarchicalCeremonyShare {
+  index: bigint;
+  rank: number;
+  secretShare: bigint;
+  publicShare: GrumpkinPoint;
 }
 
 // ── Memory clearing ──
@@ -199,4 +212,101 @@ export function verifyShareAgainstCommitments(
   }
 
   return pointEqual(lhs, rhs);
+}
+
+// ── Hierarchical (Birkhoff) Ceremony ──
+
+/**
+ * Generator-based hierarchical key ceremony using Birkhoff interpolation.
+ *
+ * Each signer gets f^(rank)(index) — the rank-th derivative of the polynomial
+ * evaluated at the signer's index. Rank 0 = standard Shamir, rank 1 = first
+ * derivative, etc.
+ *
+ * Yields one HierarchicalCeremonyShare at a time with the same memory-zeroing
+ * pattern as distributedCeremony.
+ *
+ * Returns CeremonyResult (group PK + viewing key + VSS commitments).
+ */
+export function* hierarchicalCeremony(
+  config: HierarchicalCeremonyConfig
+): Generator<HierarchicalCeremonyShare, CeremonyResult, void> {
+  const { threshold, signers } = config;
+
+  // Validate ranks
+  for (const s of signers) {
+    if (s.rank >= threshold) {
+      throw new Error(
+        `Signer ${s.index} has rank ${s.rank} >= threshold ${threshold}. ` +
+        `Rank must be < threshold for the derivative to be nonzero.`
+      );
+    }
+  }
+
+  // 1. Generate master spending secret
+  let masterSk = randomScalar();
+
+  // 2. Build polynomial coefficients [masterSk, c1, ..., c_{t-1}]
+  const coeffs: bigint[] = [Fr.create(masterSk)];
+  for (let i = 1; i < threshold; i++) {
+    coeffs.push(randomScalar());
+  }
+
+  // 3. Evaluate f^(rank)(index) for each signer
+  const shareValues = signers.map((s) =>
+    evaluateDerivative(coeffs, BigInt(s.index), s.rank)
+  );
+
+  // 4. Compute group public key
+  const groupPublicKey = toAffine(scalarMul(G, masterSk));
+
+  // 5. Compute Feldman VSS polynomial commitments: C_j = [coeff_j]G
+  const polynomialCommitments: GrumpkinPoint[] = coeffs.map((c) =>
+    toAffine(scalarMul(G, c))
+  );
+
+  // 6. Zero the master secret
+  masterSk = 0n;
+
+  // 7. Generate viewing key (independent from spending key)
+  const viewingSecretKey = randomScalar();
+  const viewingPublicKey = toAffine(scalarMul(G, viewingSecretKey));
+
+  // 8. Build share objects
+  const ceremonyShares: HierarchicalCeremonyShare[] = shareValues.map(
+    (secret, idx) => ({
+      index: BigInt(signers[idx].index),
+      rank: signers[idx].rank,
+      secretShare: secret,
+      publicShare: toAffine(scalarMul(G, secret)),
+    })
+  );
+
+  // 9. Zero polynomial coefficients
+  for (let i = 0; i < coeffs.length; i++) {
+    coeffs[i] = 0n;
+  }
+
+  // 10. Yield shares one at a time, zeroing previous after each advance
+  let previousShare: HierarchicalCeremonyShare | null = null;
+
+  for (const share of ceremonyShares) {
+    if (previousShare) {
+      previousShare.secretShare = 0n;
+    }
+    previousShare = share;
+    yield share;
+  }
+
+  // Zero the last share
+  if (previousShare) {
+    previousShare.secretShare = 0n;
+  }
+
+  return {
+    groupPublicKey,
+    viewingSecretKey,
+    viewingPublicKey,
+    polynomialCommitments,
+  };
 }

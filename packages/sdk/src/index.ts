@@ -124,12 +124,15 @@ export {
 // Distributed key ceremony
 export {
   distributedCeremony,
+  hierarchicalCeremony,
   verifyShareAgainstCommitments,
   clearSecret,
 } from "./ceremony.js";
 export type {
   CeremonyConfig,
+  HierarchicalCeremonyConfig,
   CeremonyShare,
+  HierarchicalCeremonyShare,
   CeremonyResult,
 } from "./ceremony.js";
 

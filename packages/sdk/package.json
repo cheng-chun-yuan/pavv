@@ -10,7 +10,11 @@
     "./grumpkin": "./src/grumpkin.ts",
     "./types": "./src/types.ts",
     "./ceremony": "./src/ceremony.ts",
-    "./nonce-tracker": "./src/nonce-tracker.ts"
+    "./nonce-tracker": "./src/nonce-tracker.ts",
+    "./stealth": "./src/stealth.ts",
+    "./hash": "./src/hash.ts",
+    "./transaction": "./src/transaction.ts",
+    "./signer": "./src/signer.ts"
   },
   "scripts": {
     "test": "bun test",
