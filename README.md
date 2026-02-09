@@ -1,4 +1,4 @@
-# BLSGun - Privacy-Preserving B2B Treasury
+# pavv - Privacy-Preserving B2B Treasury
 
 ## The Problem
 
