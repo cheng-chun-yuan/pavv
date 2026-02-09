@@ -15,6 +15,7 @@ export interface SignerSession {
   noncesRemaining: number;
   startedAt: number;
   expiresAt: number;
+  viewingSecretKey: string;
 }
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -30,7 +31,8 @@ let _onExpireCallback: (() => void) | null = null;
 export function startSession(
   share: ShareData,
   noncesRemaining: number,
-  onExpire: () => void
+  onExpire: () => void,
+  viewingSecretKey: string = ""
 ): void {
   // Destroy any existing session first
   destroySession();
@@ -41,6 +43,7 @@ export function startSession(
     noncesRemaining,
     startedAt: now,
     expiresAt: now + SESSION_TIMEOUT_MS,
+    viewingSecretKey,
   };
   _onExpireCallback = onExpire;
 
@@ -88,6 +91,7 @@ export function destroySession(): void {
   if (_session) {
     // Best-effort zeroing of the secret in memory
     _session.share.secretShare = "";
+    _session.viewingSecretKey = "";
     _session.share = null as unknown as ShareData;
     _session = null;
   }
@@ -102,6 +106,12 @@ export function destroySession(): void {
 export function getSessionTimeRemaining(): number {
   if (!_session) return 0;
   return Math.max(0, _session.expiresAt - Date.now());
+}
+
+/** Get the viewing secret key from the current session, or null. */
+export function getViewingSecretKey(): string | null {
+  const session = getSession();
+  return session?.viewingSecretKey || null;
 }
 
 /** Whether a session is currently active. */

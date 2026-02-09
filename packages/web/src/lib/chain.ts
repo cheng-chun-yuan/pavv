@@ -1,16 +1,7 @@
-import { JsonRpcProvider, formatEther } from "ethers";
+import { formatEther } from "viem";
+import { publicClient } from "./wagmiConfig";
 
-const RPC_URL = import.meta.env.VITE_RPC_URL || "http://127.0.0.1:8545";
 const CONTRACT_ADDRESS = import.meta.env.VITE_BLSGUN_ADDRESS || "";
-
-let provider: JsonRpcProvider | null = null;
-
-export function getProvider(): JsonRpcProvider {
-  if (!provider) {
-    provider = new JsonRpcProvider(RPC_URL);
-  }
-  return provider;
-}
 
 export function formatBalance(wei: bigint): string {
   const eth = formatEther(wei);
@@ -24,8 +15,9 @@ export function formatBalance(wei: bigint): string {
 export async function getContractBalance(): Promise<string | null> {
   if (!CONTRACT_ADDRESS) return null;
   try {
-    const p = getProvider();
-    const balance = await p.getBalance(CONTRACT_ADDRESS);
+    const balance = await publicClient.getBalance({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+    });
     return formatBalance(balance);
   } catch {
     return null;
@@ -34,4 +26,8 @@ export async function getContractBalance(): Promise<string | null> {
 
 export function getContractAddress(): string {
   return CONTRACT_ADDRESS;
+}
+
+export function toBytes32(n: bigint): `0x${string}` {
+  return `0x${n.toString(16).padStart(64, "0")}`;
 }

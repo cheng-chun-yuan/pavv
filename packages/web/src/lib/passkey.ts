@@ -20,6 +20,7 @@ export interface EncryptedSharePayload {
   share: ShareData;
   groupPublicKey: CurvePoint;
   viewingPublicKey: CurvePoint;
+  viewingSecretKey?: string;
   groupConfig?: GroupConfig;
 }
 
@@ -155,7 +156,8 @@ export async function registerPasskeyForShare(
   share: ShareData,
   groupPublicKey: CurvePoint,
   viewingPublicKey: CurvePoint,
-  groupConfig?: GroupConfig
+  groupConfig?: GroupConfig,
+  viewingSecretKey?: string
 ): Promise<PasskeyResult> {
   try {
     const salt = crypto.getRandomValues(new Uint8Array(32));
@@ -222,6 +224,7 @@ export async function registerPasskeyForShare(
       share,
       groupPublicKey,
       viewingPublicKey,
+      viewingSecretKey,
       groupConfig,
     };
 

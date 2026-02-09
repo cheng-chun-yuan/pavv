@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SignerRole, GroupConfig, KeyCeremonyData, Signer } from "../store/treasury";
 
 type Tab = "dashboard" | "payment" | "transactions" | "audit";
@@ -78,10 +79,26 @@ export function Sidebar({
   onSignerLogin,
 }: SidebarProps) {
   const roles = groupConfig?.roles ?? [];
+  const isHTSS = groupConfig?.mode === "HTSS";
+  const rankLabels: string[] = [];
+  const signerRanks = groupConfig?.signerRanks;
   const showSessionWarning =
     initialized && sessionTimeRemaining > 0 && sessionTimeRemaining < 5 * 60 * 1000;
 
   const stealthAddress = keyCeremony?.groupPublicKey?.x ?? "";
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyAddress = async () => {
+    if (!keyCeremony?.groupPublicKey || !keyCeremony?.viewingPublicKey) return;
+    const pad = (hex: string) => BigInt(hex).toString(16).padStart(64, "0");
+    const spendYOdd = BigInt(keyCeremony.groupPublicKey.y) % 2n === 1n ? 1 : 0;
+    const viewYOdd = BigInt(keyCeremony.viewingPublicKey.y) % 2n === 1n ? 1 : 0;
+    const flags = (spendYOdd | (viewYOdd << 1)).toString(16).padStart(2, "0");
+    const metaAddress = "0x" + flags + pad(keyCeremony.groupPublicKey.x) + pad(keyCeremony.viewingPublicKey.x);
+    await navigator.clipboard.writeText(metaAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <aside className="w-72 bg-sidebar-bg flex flex-col h-screen sticky top-0">
@@ -96,9 +113,27 @@ export function Sidebar({
           <div className="min-w-0">
             <span className="text-white text-lg font-semibold block leading-tight">Pavv</span>
             {initialized && stealthAddress && (
-              <span className="text-sidebar-text text-xs font-mono block truncate">
-                {truncateAddress(stealthAddress)}
-              </span>
+              <button
+                onClick={handleCopyAddress}
+                className="flex items-center gap-1 text-sidebar-text hover:text-pavv-400 text-xs font-mono truncate transition-colors duration-200 cursor-pointer"
+                title="Copy stealth meta-address"
+              >
+                {copied ? (
+                  <>
+                    <svg className="w-3 h-3 text-pavv-400 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                    <span className="text-pavv-400">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                    </svg>
+                    {truncateAddress(stealthAddress)}
+                  </>
+                )}
+              </button>
             )}
           </div>
         </div>
@@ -106,7 +141,7 @@ export function Sidebar({
           <div className="mt-3 flex items-center gap-2">
             <span className="text-sidebar-text text-xs">{groupConfig.name}</span>
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-pavv-500/20 text-pavv-400">
-              {groupConfig.threshold}-of-{groupConfig.totalSigners} MPC
+              {groupConfig.threshold}-of-{groupConfig.totalSigners} {isHTSS ? "HTSS" : "MPC"}
             </span>
           </div>
         )}
@@ -198,7 +233,7 @@ export function Sidebar({
             Signers
           </p>
           <div className="space-y-1">
-            {roles.map((role) => {
+            {roles.map((role, i) => {
               const signer = signers.find((s) => s.role === role);
               const hasKey = signer?.hasKey ?? false;
               const isActive = currentSigner === role;
@@ -226,6 +261,11 @@ export function Sidebar({
                     }`} />
                   )}
                   <span className="flex-1">{role}</span>
+                  {isHTSS && signerRanks && signerRanks[i] !== undefined && (
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-pavv-500/15 text-pavv-400">
+                      Rank {signerRanks[i]}
+                    </span>
+                  )}
                   {!hasKey && (
                     <span className="flex items-center gap-1 text-[10px] text-sidebar-text/40">
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">

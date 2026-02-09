@@ -15,6 +15,8 @@ export interface GroupConfig {
   threshold: number;
   totalSigners: number;
   roles: string[];
+  mode?: "TSS" | "HTSS";
+  signerRanks?: number[];
 }
 
 export interface CurvePoint {
@@ -27,11 +29,13 @@ export interface ShareData {
   role: SignerRole;
   secretShare: string;
   publicShare: CurvePoint;
+  rank?: number;
 }
 
 export interface KeyCeremonyData {
   groupPublicKey: CurvePoint;
   viewingPublicKey: CurvePoint;
+  viewingSecretKey?: string;
   shares: ShareData[];
 }
 
@@ -48,6 +52,43 @@ export interface Signer {
   hasKey: boolean;
 }
 
+export interface SigningData {
+  // Input note (serialized as hex strings)
+  inputCommitment: string;
+  inputAmount: string;
+  inputBlinding: string;
+  inputLeafIndex: number;
+  inputStealthScalar: string;
+  inputStealthPubKeyX: string;
+  inputStealthPubKeyY: string;
+  inputSpendingKeyHash: string;
+  // Output (send only)
+  outputCommitment?: string;
+  outputEphPubKeyX?: string;
+  outputEphPubKeyY?: string;
+  outputViewTag?: number;
+  outputEncryptedAmount?: string;
+  // Withdraw target
+  withdrawRecipient?: string;
+  withdrawAmountWei?: string;
+  // FROST session
+  message: string;
+  nullifier: string;
+  // Nonce commitments per signer index (stringified bigints)
+  nonceCommitments: Record<string, { Dx: string; Dy: string; Ex: string; Ey: string }>;
+  // Partial signatures per signer index
+  partialSignatures: Record<string, { z_i: string; Rx: string; Ry: string }>;
+}
+
+export type ProvingStep = "aggregating" | "proving" | "submitting" | "confirming";
+
+export const PROVING_STEPS: { key: ProvingStep; label: string }[] = [
+  { key: "aggregating", label: "Reconstructing signature" },
+  { key: "proving", label: "Generating ZK proof" },
+  { key: "submitting", label: "Submitting on-chain" },
+  { key: "confirming", label: "Waiting for confirmation" },
+];
+
 export interface PendingPayment {
   id: string;
   recipient: string;
@@ -58,6 +99,9 @@ export interface PendingPayment {
   signatures: SignerRole[];
   requiredSignatures: number;
   status: "pending" | "signing" | "proving" | "submitted" | "confirmed";
+  provingStep?: ProvingStep;
+  txType?: "send" | "withdraw";
+  signingData?: SigningData;
 }
 
 export interface TreasuryState {
@@ -100,7 +144,7 @@ export type TreasuryAction =
   | { type: "SET_BALANCE"; balance: string }
   | { type: "CREATE_PAYMENT"; payment: PendingPayment }
   | { type: "ADD_SIGNATURE"; paymentId: string; signer: SignerRole }
-  | { type: "UPDATE_STATUS"; paymentId: string; status: PendingPayment["status"] }
+  | { type: "UPDATE_STATUS"; paymentId: string; status: PendingPayment["status"]; provingStep?: ProvingStep }
   | { type: "ADD_ACTIVITY"; activity: ActivityItem }
   | {
       type: "LOGIN_WITH_SHARE";
@@ -110,7 +154,11 @@ export type TreasuryAction =
       groupConfig: GroupConfig | null;
     }
   | { type: "LOGOUT" }
-  | { type: "SET_SESSION_EXPIRY"; expiresAt: number };
+  | { type: "SET_SESSION_EXPIRY"; expiresAt: number }
+  | { type: "ADD_NONCE_COMMITMENT"; paymentId: string; signerIndex: string; Dx: string; Dy: string; Ex: string; Ey: string }
+  | { type: "ADD_PARTIAL_SIG"; paymentId: string; signerIndex: string; z_i: string; Rx: string; Ry: string }
+  | { type: "RESTORE_PAYMENTS"; payments: PendingPayment[] }
+  | { type: "RESET_SIGNATURES"; paymentId: string };
 
 export function treasuryReducer(
   state: TreasuryState,
@@ -185,7 +233,9 @@ export function treasuryReducer(
       return {
         ...state,
         pendingPayments: state.pendingPayments.map((p) =>
-          p.id === action.paymentId ? { ...p, status: action.status } : p
+          p.id === action.paymentId
+            ? { ...p, status: action.status, provingStep: action.provingStep }
+            : p
         ),
       };
 
@@ -193,6 +243,51 @@ export function treasuryReducer(
       return {
         ...state,
         recentActivity: [action.activity, ...state.recentActivity],
+      };
+
+    case "ADD_NONCE_COMMITMENT":
+      return {
+        ...state,
+        pendingPayments: state.pendingPayments.map((p) => {
+          if (p.id !== action.paymentId || !p.signingData) return p;
+          return {
+            ...p,
+            signingData: {
+              ...p.signingData,
+              nonceCommitments: {
+                ...p.signingData.nonceCommitments,
+                [action.signerIndex]: {
+                  Dx: action.Dx,
+                  Dy: action.Dy,
+                  Ex: action.Ex,
+                  Ey: action.Ey,
+                },
+              },
+            },
+          };
+        }),
+      };
+
+    case "ADD_PARTIAL_SIG":
+      return {
+        ...state,
+        pendingPayments: state.pendingPayments.map((p) => {
+          if (p.id !== action.paymentId || !p.signingData) return p;
+          return {
+            ...p,
+            signingData: {
+              ...p.signingData,
+              partialSignatures: {
+                ...p.signingData.partialSignatures,
+                [action.signerIndex]: {
+                  z_i: action.z_i,
+                  Rx: action.Rx,
+                  Ry: action.Ry,
+                },
+              },
+            },
+          };
+        }),
       };
 
     case "LOGIN_WITH_SHARE": {
@@ -229,6 +324,28 @@ export function treasuryReducer(
       };
     }
 
+    case "RESET_SIGNATURES":
+      return {
+        ...state,
+        pendingPayments: state.pendingPayments.map((p) => {
+          if (p.id !== action.paymentId || !p.signingData) return p;
+          return {
+            ...p,
+            status: "pending" as const,
+            provingStep: undefined,
+            signatures: [],
+            signingData: {
+              ...p.signingData,
+              nonceCommitments: {},
+              partialSignatures: {},
+            },
+          };
+        }),
+      };
+
+    case "RESTORE_PAYMENTS":
+      return { ...state, pendingPayments: action.payments };
+
     case "LOGOUT":
       return {
         ...initialState,
@@ -242,5 +359,27 @@ export function treasuryReducer(
 
     default:
       return state;
+  }
+}
+
+// ─── localStorage persistence for pending payments ───────────────────────────
+
+const PAYMENTS_STORAGE_KEY = "blsgun_pending_payments";
+
+export function savePendingPayments(payments: PendingPayment[]): void {
+  try {
+    localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(payments));
+  } catch {
+    // Ignore storage errors (quota, private browsing, etc.)
+  }
+}
+
+export function loadPendingPayments(): PendingPayment[] {
+  try {
+    const raw = localStorage.getItem(PAYMENTS_STORAGE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
   }
 }

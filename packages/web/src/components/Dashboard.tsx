@@ -1,4 +1,8 @@
-import type { TreasuryState, PendingPayment } from "../store/treasury";
+import { useState } from "react";
+import type { TreasuryState, PendingPayment, CurvePoint, GroupConfig } from "../store/treasury";
+import type { ScannedNote } from "../lib/balanceScanner";
+import { ReceiveModal } from "./ReceiveModal";
+import { WithdrawModal } from "./WithdrawModal";
 
 type Tab = "dashboard" | "payment" | "transactions" | "audit";
 
@@ -6,47 +10,102 @@ interface DashboardProps {
   state: TreasuryState;
   onTabChange: (tab: Tab) => void;
   pendingPayments: PendingPayment[];
+  isScanning?: boolean;
+  noteCount?: number;
+  balanceLoaded?: boolean;
+  onRefresh: () => void;
+  groupPublicKey: CurvePoint | null;
+  viewingPublicKey: CurvePoint | null;
+  onDeposited: () => void;
+  notes?: ScannedNote[];
+  groupConfig?: GroupConfig | null;
+  onCreateWithdraw?: (payment: PendingPayment) => void;
 }
 
-export function Dashboard({ state, onTabChange, pendingPayments }: DashboardProps) {
+function truncateHex(hex: string, chars = 8): string {
+  if (hex.length <= chars * 2 + 4) return hex;
+  return hex.slice(0, chars + 2) + "..." + hex.slice(-chars);
+}
+
+export function Dashboard({ state, onTabChange, pendingPayments, isScanning, noteCount, balanceLoaded, onRefresh, groupPublicKey, viewingPublicKey, onDeposited, notes, groupConfig, onCreateWithdraw }: DashboardProps) {
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+
   return (
     <div className="space-y-6">
       {/* Balance Hero Card */}
       <div className="bg-dark-card rounded-xl border border-dark-border shadow-card p-8">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-base text-slate-400 mb-1">Total balance</p>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-base text-slate-400">Total balance</p>
+              <button
+                onClick={onRefresh}
+                disabled={isScanning}
+                className="text-slate-400 hover:text-pavv-400 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Refresh balance"
+              >
+                <svg className={`w-4 h-4 ${isScanning ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.015 4.356v4.992" />
+                </svg>
+              </button>
+            </div>
             <p className="text-4xl font-bold text-white">
-              {state.balance === "0" ? (
+              {!balanceLoaded && !isScanning ? (
                 <span className="text-slate-400 animate-pulse">Loading...</span>
+              ) : isScanning && !balanceLoaded ? (
+                <span className="text-slate-400 animate-pulse">Scanning...</span>
               ) : (
                 <>{state.balance} <span className="text-xl font-normal text-slate-400">CFX</span></>
               )}
             </p>
-            <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-pavv-500/15 rounded-full">
-              <svg className="w-4 h-4 text-pavv-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-              </svg>
-              <span className="text-sm font-medium text-pavv-400">Shielded on Conflux eSpace</span>
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-pavv-500/15 rounded-full">
+                <svg className="w-4 h-4 text-pavv-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                </svg>
+                <span className="text-sm font-medium text-pavv-400">Shielded on Conflux eSpace</span>
+              </span>
+              {isScanning && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-dark-surface rounded-full">
+                  <div className="w-3 h-3 border-2 border-pavv-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm text-slate-400">Scanning...</span>
+                </span>
+              )}
+              {!isScanning && noteCount !== undefined && noteCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-dark-surface rounded-full">
+                  <span className="text-sm text-slate-400">{noteCount} note{noteCount !== 1 ? "s" : ""}</span>
+                </span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => onTabChange("payment")}
-              className="px-6 py-3 bg-pavv-500 hover:bg-pavv-600 text-white font-semibold rounded-lg text-base transition-colors duration-200 cursor-pointer flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
-              </svg>
-              Send
-            </button>
-            <button
-              className="px-6 py-3 border border-dark-border hover:bg-dark-surface text-slate-300 font-semibold rounded-lg text-base transition-colors duration-200 cursor-pointer flex items-center gap-2"
+              onClick={() => setShowDepositModal(true)}
+              className="px-5 py-3 bg-pavv-500 hover:bg-pavv-600 text-white font-semibold rounded-lg text-base transition-colors duration-200 cursor-pointer flex items-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3" />
               </svg>
-              Receive
+              Deposit
+            </button>
+            <button
+              onClick={() => onTabChange("payment")}
+              className="px-5 py-3 border border-dark-border hover:bg-dark-surface text-slate-300 font-semibold rounded-lg text-base transition-colors duration-200 cursor-pointer flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+              </svg>
+              Send
+            </button>
+            <button
+              onClick={() => setShowWithdrawModal(true)}
+              className="px-5 py-3 border border-dark-border hover:bg-dark-surface text-slate-300 font-semibold rounded-lg text-base transition-colors duration-200 cursor-pointer flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
+              </svg>
+              Withdraw
             </button>
           </div>
         </div>
@@ -74,7 +133,7 @@ export function Dashboard({ state, onTabChange, pendingPayments }: DashboardProp
                 </div>
                 <div className="flex items-center gap-3">
                   <p className="text-base font-semibold text-white">
-                    {state.balance === "0" ? <span className="text-slate-400 animate-pulse">...</span> : <>{state.balance} CFX</>}
+                    {!balanceLoaded ? <span className="text-slate-400 animate-pulse">...</span> : <>{state.balance} CFX</>}
                   </p>
                   <span className="text-sm font-medium px-2.5 py-0.5 rounded-full bg-pavv-500/15 text-pavv-400">
                     Shielded
@@ -203,6 +262,12 @@ export function Dashboard({ state, onTabChange, pendingPayments }: DashboardProp
                 <span className="text-slate-400">Privacy</span>
                 <span className="text-pavv-400 font-medium">Fully Shielded</span>
               </div>
+              {groupPublicKey && (
+                <div className="flex items-center justify-between text-base">
+                  <span className="text-slate-400">Spending PK</span>
+                  <span className="text-slate-200 font-mono text-sm">{truncateHex(groupPublicKey.x)}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -220,6 +285,25 @@ export function Dashboard({ state, onTabChange, pendingPayments }: DashboardProp
         <span className="text-dark-border">|</span>
         <span className="text-pavv-400 font-medium">Fully Shielded</span>
       </div>
+
+      {groupPublicKey && viewingPublicKey && (
+        <ReceiveModal
+          open={showDepositModal}
+          onClose={() => setShowDepositModal(false)}
+          groupPublicKey={groupPublicKey}
+          viewingPublicKey={viewingPublicKey}
+          onDeposited={onDeposited}
+        />
+      )}
+
+      <WithdrawModal
+        open={showWithdrawModal}
+        onClose={() => setShowWithdrawModal(false)}
+        notes={notes}
+        groupPublicKey={groupPublicKey}
+        groupConfig={groupConfig}
+        onCreateWithdraw={onCreateWithdraw ?? (() => {})}
+      />
     </div>
   );
 }

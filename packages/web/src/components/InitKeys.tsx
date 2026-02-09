@@ -11,7 +11,9 @@ import {
 } from "../lib/passkey";
 import {
   distributedCeremony,
+  hierarchicalCeremony,
   type CeremonyShare,
+  type HierarchicalCeremonyShare,
   type CeremonyResult,
 } from "@blsgun/sdk/ceremony";
 
@@ -19,7 +21,8 @@ interface InitKeysProps {
   onInit: (
     data: KeyCeremonyData,
     transcript: CeremonyTranscriptEntry[],
-    groupConfig: GroupConfig
+    groupConfig: GroupConfig,
+    viewingSecretKey?: string
   ) => void;
 }
 
@@ -39,10 +42,11 @@ function truncateHex(hex: string, chars = 8): string {
 }
 
 function downloadShareJSON(
-  share: { index: number; role: SignerRole; secretShare: string; publicShare: { x: string; y: string } },
+  share: { index: number; role: SignerRole; secretShare: string; publicShare: { x: string; y: string }; rank?: number },
   groupPk: { x: string; y: string },
   groupConfig: GroupConfig
 ) {
+  const mode = groupConfig.mode ?? "TSS";
   const data = {
     pavv_share: {
       version: "0.1.0",
@@ -53,7 +57,9 @@ function downloadShareJSON(
       groupPublicKey: groupPk,
       curve: "Grumpkin",
       threshold: `${groupConfig.threshold}-of-${groupConfig.totalSigners}`,
-      protocol: "FROST",
+      protocol: mode === "HTSS" ? "FROST+Birkhoff" : "FROST",
+      mode,
+      ...(share.rank !== undefined ? { rank: share.rank } : {}),
       groupName: groupConfig.name,
     },
   };
@@ -113,6 +119,8 @@ export function InitKeys({ onInit }: InitKeysProps) {
   const [totalSigners, setTotalSigners] = useState(3);
   const [threshold, setThreshold] = useState(2);
   const [roleNames, setRoleNames] = useState<string[]>(DEFAULT_ROLES);
+  const [ceremonyMode, setCeremonyMode] = useState<"TSS" | "HTSS">("TSS");
+  const [signerRanks, setSignerRanks] = useState<number[]>([0, 0, 0]);
 
   // Distribute phase state
   const [currentShareIndex, setCurrentShareIndex] = useState(0);
@@ -121,6 +129,7 @@ export function InitKeys({ onInit }: InitKeysProps) {
     role: SignerRole;
     secretShare: string;
     publicShare: { x: string; y: string };
+    rank?: number;
   } | null>(null);
   const [shareIsSaved, setShareIsSaved] = useState(false);
   const [distributionLog, setDistributionLog] = useState<DistributionEntry[]>(
@@ -144,10 +153,13 @@ export function InitKeys({ onInit }: InitKeysProps) {
   const webAuthnSupported = isWebAuthnAvailable();
 
   const groupConfigRef = useRef<GroupConfig | null>(null);
+  const viewingSkRef = useRef<string | null>(null);
 
   const generationSteps = [
     "Generating master spending key on Grumpkin curve...",
-    `Splitting into ${threshold}-of-${totalSigners} Shamir shares with Feldman VSS...`,
+    ceremonyMode === "HTSS"
+      ? `Splitting into ${threshold}-of-${totalSigners} Birkhoff hierarchical shares...`
+      : `Splitting into ${threshold}-of-${totalSigners} Shamir shares with Feldman VSS...`,
     "Computing polynomial commitments for verification...",
     "Deriving viewing key for audit...",
     "Zeroing master secret from memory...",
@@ -170,6 +182,10 @@ export function InitKeys({ onInit }: InitKeysProps) {
       if (prev.length >= n) return prev;
       const extra = Array.from({ length: n - prev.length }, (_, i) => `Signer ${prev.length + i + 1}`);
       return [...prev, ...extra];
+    });
+    setSignerRanks((prev) => {
+      if (prev.length >= n) return prev;
+      return [...prev, ...Array.from({ length: n - prev.length }, () => 0)];
     });
   };
 
@@ -216,10 +232,12 @@ export function InitKeys({ onInit }: InitKeysProps) {
         role: currentShare.role,
         secretShare: currentShare.secretShare,
         publicShare: currentShare.publicShare,
+        rank: currentShare.rank,
       },
       gpk,
       vpk,
-      groupConfigRef.current ?? undefined
+      groupConfigRef.current ?? undefined,
+      viewingSkRef.current ?? undefined
     );
 
     if (result.ok) {
@@ -245,7 +263,7 @@ export function InitKeys({ onInit }: InitKeysProps) {
   const groupPkRef = useRef<{ x: string; y: string } | null>(null);
   const viewingPkRef = useRef<{ x: string; y: string } | null>(null);
   const allSharesRef = useRef<
-    { index: number; role: SignerRole; secretShare: string; publicShare: { x: string; y: string } }[]
+    { index: number; role: SignerRole; secretShare: string; publicShare: { x: string; y: string }; rank?: number }[]
   >([]);
 
   const handleStartConfigure = () => {
@@ -254,11 +272,14 @@ export function InitKeys({ onInit }: InitKeysProps) {
 
   const handleGenerateActual = async () => {
     const roles = roleNames.slice(0, totalSigners).map((n) => n.trim());
+    const ranks = signerRanks.slice(0, totalSigners);
     const gc: GroupConfig = {
       name: groupName.trim(),
       threshold,
       totalSigners,
       roles,
+      mode: ceremonyMode,
+      signerRanks: ceremonyMode === "HTSS" ? ranks : undefined,
     };
     groupConfigRef.current = gc;
 
@@ -269,31 +290,64 @@ export function InitKeys({ onInit }: InitKeysProps) {
       await new Promise((r) => setTimeout(r, 500));
     }
 
-    const gen = distributedCeremony({ threshold, totalSigners });
-    const collectedShares: { index: number; role: SignerRole; secretShare: string; publicShare: { x: string; y: string } }[] = [];
+    // Mark all steps as done and yield to let React render checkmarks
+    setGenStep(generationSteps.length);
+    await new Promise((r) => setTimeout(r, 100));
 
-    for (let i = 0; i < totalSigners; i++) {
-      const { value } = gen.next();
-      const s = value as CeremonyShare;
-      collectedShares.push({
-        index: Number(s.index),
-        role: roles[i],
-        secretShare: bigintToHex(s.secretShare),
-        publicShare: pointToHex(s.publicShare),
-      });
+    try {
+      const collectedShares: { index: number; role: SignerRole; secretShare: string; publicShare: { x: string; y: string }; rank?: number }[] = [];
+
+      if (ceremonyMode === "HTSS") {
+        const signerConfigs = ranks.map((rank, i) => ({ index: i + 1, rank }));
+        const gen = hierarchicalCeremony({ threshold, signers: signerConfigs });
+
+        for (let i = 0; i < totalSigners; i++) {
+          const { value } = gen.next();
+          const s = value as HierarchicalCeremonyShare;
+          collectedShares.push({
+            index: Number(s.index),
+            role: roles[i],
+            secretShare: bigintToHex(s.secretShare),
+            publicShare: pointToHex(s.publicShare),
+            rank: s.rank,
+          });
+        }
+
+        const { value: result } = gen.next();
+        const cr = result as CeremonyResult;
+        groupPkRef.current = pointToHex(cr.groupPublicKey);
+        viewingPkRef.current = pointToHex(cr.viewingPublicKey);
+        viewingSkRef.current = bigintToHex(cr.viewingSecretKey);
+      } else {
+        const gen = distributedCeremony({ threshold, totalSigners });
+
+        for (let i = 0; i < totalSigners; i++) {
+          const { value } = gen.next();
+          const s = value as CeremonyShare;
+          collectedShares.push({
+            index: Number(s.index),
+            role: roles[i],
+            secretShare: bigintToHex(s.secretShare),
+            publicShare: pointToHex(s.publicShare),
+          });
+        }
+
+        const { value: result } = gen.next();
+        const cr = result as CeremonyResult;
+        groupPkRef.current = pointToHex(cr.groupPublicKey);
+        viewingPkRef.current = pointToHex(cr.viewingPublicKey);
+        viewingSkRef.current = bigintToHex(cr.viewingSecretKey);
+      }
+
+      allSharesRef.current = collectedShares;
+      setCurrentShare(collectedShares[0]);
+      setCurrentShareIndex(0);
+      setShareIsSaved(false);
+      setPhase("distribute");
+    } catch (err) {
+      console.error("Key generation failed:", err);
+      setPhase("idle");
     }
-
-    const { value: result } = gen.next();
-    const cr = result as CeremonyResult;
-
-    groupPkRef.current = pointToHex(cr.groupPublicKey);
-    viewingPkRef.current = pointToHex(cr.viewingPublicKey);
-    allSharesRef.current = collectedShares;
-
-    setCurrentShare(collectedShares[0]);
-    setCurrentShareIndex(0);
-    setShareIsSaved(false);
-    setPhase("distribute");
   };
 
   const handleNextSignerActual = () => {
@@ -335,6 +389,7 @@ export function InitKeys({ onInit }: InitKeysProps) {
         role: s.role,
         secretShare: "",
         publicShare: s.publicShare,
+        rank: s.rank,
       })),
     };
 
@@ -345,7 +400,10 @@ export function InitKeys({ onInit }: InitKeysProps) {
       timestamp: e.timestamp,
     }));
 
-    onInit(keyCeremony, transcript, groupConfigRef.current);
+    const vsk = viewingSkRef.current ?? undefined;
+    viewingSkRef.current = "";
+
+    onInit(keyCeremony, transcript, groupConfigRef.current, vsk);
   };
 
   // -- Render: idle --
@@ -463,6 +521,42 @@ export function InitKeys({ onInit }: InitKeysProps) {
                 signers required to authorize transactions
               </div>
 
+              {/* TSS/HTSS Mode Toggle */}
+              <div>
+                <label className="block text-base font-medium text-slate-200 mb-2">
+                  Protocol Mode
+                </label>
+                <div className="flex rounded-lg overflow-hidden border border-dark-border">
+                  <button
+                    type="button"
+                    onClick={() => setCeremonyMode("TSS")}
+                    className={`flex-1 py-2.5 text-base font-medium transition-colors duration-200 cursor-pointer ${
+                      ceremonyMode === "TSS"
+                        ? "bg-pavv-500 text-white"
+                        : "bg-dark-surface text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    TSS (Shamir)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCeremonyMode("HTSS")}
+                    className={`flex-1 py-2.5 text-base font-medium transition-colors duration-200 cursor-pointer ${
+                      ceremonyMode === "HTSS"
+                        ? "bg-pavv-500 text-white"
+                        : "bg-dark-surface text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    HTSS (Birkhoff)
+                  </button>
+                </div>
+                <p className="text-sm text-slate-400 mt-1.5">
+                  {ceremonyMode === "TSS"
+                    ? "Standard FROST RFC 9591 — all signers are equal"
+                    : "FROST + Birkhoff HTSS — signers have hierarchical ranks"}
+                </p>
+              </div>
+
               <div>
                 <label className="block text-base font-medium text-slate-200 mb-2">
                   Signer Roles
@@ -480,6 +574,25 @@ export function InitKeys({ onInit }: InitKeysProps) {
                         placeholder={`Signer ${i + 1}`}
                         className="flex-1 bg-dark-surface border border-dark-border rounded-lg px-3 py-2.5 text-base text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-pavv-500 focus:border-transparent transition-colors duration-200"
                       />
+                      {ceremonyMode === "HTSS" && (
+                        <select
+                          value={signerRanks[i] ?? 0}
+                          onChange={(e) => {
+                            setSignerRanks((prev) => {
+                              const next = [...prev];
+                              next[i] = Number(e.target.value);
+                              return next;
+                            });
+                          }}
+                          className="w-32 bg-dark-surface border border-dark-border rounded-lg px-2 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-pavv-500 focus:border-transparent transition-colors duration-200"
+                        >
+                          {Array.from({ length: threshold }, (_, r) => (
+                            <option key={r} value={r}>
+                              Rank {r}{r === 0 ? " (Admin)" : r === 1 ? " (Mgr)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -558,8 +671,8 @@ export function InitKeys({ onInit }: InitKeysProps) {
               ))}
             </div>
             <div className="mt-6 p-3 bg-dark-surface rounded-lg text-sm text-slate-400">
-              Curve: Grumpkin (BN254 cycle) | Threshold: {threshold}-of-{totalSigners} | Protocol:
-              FROST RFC 9591
+              Curve: Grumpkin (BN254 cycle) | Threshold: {threshold}-of-{totalSigners} | Protocol:{" "}
+              {ceremonyMode === "HTSS" ? "FROST + Birkhoff HTSS" : "FROST RFC 9591"}
             </div>
           </div>
         </div>
@@ -665,7 +778,14 @@ export function InitKeys({ onInit }: InitKeysProps) {
               <h4 className="text-lg font-semibold text-white">
                 Share {currentShare.index}
               </h4>
-              <p className="text-base text-slate-400">{currentShare.role}</p>
+              <p className="text-base text-slate-400">
+                {currentShare.role}
+                {currentShare.rank !== undefined && ceremonyMode === "HTSS" && (
+                  <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-pavv-500/20 text-pavv-400">
+                    Rank {currentShare.rank}{currentShare.rank === 0 ? " — Admin" : currentShare.rank === 1 ? " — Mgr" : ""}
+                  </span>
+                )}
+              </p>
             </div>
           </div>
 
@@ -889,6 +1009,11 @@ export function InitKeys({ onInit }: InitKeysProps) {
             All {gc.totalSigners} shares have been distributed securely. Master secret has been
             destroyed.
           </p>
+          <div className="mt-2 inline-flex items-center gap-2">
+            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-dark-surface text-slate-300">
+              {gc.mode === "HTSS" ? "FROST + Birkhoff HTSS" : "FROST RFC 9591"}
+            </span>
+          </div>
         </div>
 
         {/* Group Public Key */}
