@@ -1,0 +1,6 @@
+{
+  "buildCommand": "cd packages/web && bun run build",
+  "outputDirectory": "packages/web/dist",
+  "installCommand": "bun install",
+  "framework": "vite"
+}
