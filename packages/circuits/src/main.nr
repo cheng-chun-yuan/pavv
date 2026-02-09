@@ -77,8 +77,15 @@ fn main(
     // ========================================
     // 1. VERIFY NULLIFIER (prevents double-spend)
     // ========================================
+    // Reconstruct leaf index from merkle path direction bits (binary decomposition)
+    let mut leaf_index: Field = 0;
+    let mut power_of_2: Field = 1;
+    for i in 0..TREE_DEPTH {
+        leaf_index = leaf_index + merkle_indices[i] * power_of_2;
+        power_of_2 = power_of_2 * 2;
+    }
     // nullifier = hash_2(spending_key_hash, leaf_index)
-    let computed_nullifier = hash_2(spending_key_hash, merkle_indices[0]);
+    let computed_nullifier = hash_2(spending_key_hash, leaf_index);
     assert(computed_nullifier == nullifier, "Nullifier mismatch");
 
     // ========================================
